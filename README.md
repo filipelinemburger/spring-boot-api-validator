@@ -1,3 +1,5 @@
+<img src="plugins/spring-api-validator/assets/icon.png" width="96" alt="" align="right">
+
 # Spring API Validator
 
 A Claude Code plugin (and Agent Skill) that reviews the REST API of a Spring Boot application and reports what is actually broken — not style nits. It reads what each endpoint *does*, then compares that with what the API *claims*:

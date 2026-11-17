@@ -1,13 +1,15 @@
 {
   "name": "spring-tools",
   "description": "Claude Code plugins for Spring Boot projects.",
-  "owner": { "name": "filipelinemburger" },
+  "owner": {
+    "name": "filipelinemburger"
+  },
   "plugins": [
     {
       "name": "spring-api-validator",
       "source": "./plugins/spring-api-validator",
       "description": "Validate a Spring Boot REST API: verbs, paths, binding, validation, DTOs, errors and ownership.",
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ]
 }
