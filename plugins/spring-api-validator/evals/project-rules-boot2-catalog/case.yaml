@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: project-rules-boot2-catalog
+expected_outcome: |
+  product-review.md is scoped to ProductController, applies the .api-validator.md rules (prefix /api/v1, Location on create, snake_case without @JsonProperty overrides, no entities exposed, errors only via ApiExceptionHandler/ApiError) and catches the Boot 2.7-specific defects (jakarta.validation imports ignored, deleteById on a missing id throwing in Spring Data 2.x, Integer stock unboxed into int), without recommending Boot 3-only fixes such as ProblemDetail as the solution.
+context:
+  scaffold_script: place-files.sh

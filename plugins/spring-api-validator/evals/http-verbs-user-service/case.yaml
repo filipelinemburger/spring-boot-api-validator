@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: http-verbs-user-service
+expected_outcome: |
+  verbs-report.md classifies what each of the 10 handlers really does and flags the verb mismatches (GET that deletes, GET that emails an export, POST used for listing, PUT on the collection creating users, PATCH that overwrites every field, DELETE with a request body and text response, POST create returning 200) without flagging the legitimate POST /search and POST /{id}/activate as errors.
+context:
+  scaffold_script: place-files.sh

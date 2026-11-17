@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: full-audit-order-service
+expected_outcome: |
+  A report in api-report.md that inventories all 12 endpoints and flags the real runtime defects (missing @Valid, primitive/@NotBlank-on-Long validation traps, unvalidated nested items, path variable name mismatch, required=false primitive, LocalDate param without @DateTimeFormat, @RequestMapping without method, GETs with side effects including the hidden dirty-checking write, entity exposure/recursion, NoSuchElementException 500s, 200 instead of 201) while recognising the refunds and status endpoints as correct.
+context:
+  scaffold_script: place-files.sh

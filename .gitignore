@@ -1,0 +1,7 @@
+# Local review output and skill-creator test workspaces — never published
+reports/
+*-workspace/
+# claude plugin eval results
+plugins/*/evals/results/
+.DS_Store
+__pycache__/

@@ -1,0 +1,9 @@
+server:
+  servlet:
+    context-path: /api
+spring:
+  datasource:
+    url: jdbc:h2:mem:orders
+  jpa:
+    hibernate:
+      ddl-auto: update

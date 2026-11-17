@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring API Validator"
+  short_description: "Validate a Spring Boot REST API: verbs, paths, DTOs, validation, errors"
+  default_prompt: "Use $spring-api-validator to validate the REST API in this project and report the problems you find."
