@@ -75,6 +75,7 @@ The plugin ships a standalone checker the skill runs first, and that you can run
 | QC13–QC14 | Action verbs in GET paths (`GET /orders/{id}/cancel`); date parameters without `@DateTimeFormat` |
 | QC15–QC17 | JPA entities as request bodies (mass assignment) or responses; bare `orElseThrow()` giving 500 instead of 404; password limits above BCrypt's 72 bytes |
 | QC18–QC19 | Unhandled errors reaching clients as 401 behind a stateless token filter; Kotlin constraints without `@field:` |
+| QC20 | Request fields that allow longer strings or larger numbers than the database column they end up in — limits read from Flyway/SQL migrations (in order, including later `ALTER`/`RENAME`), Liquibase XML and `@Column`, including money copied into a narrower column elsewhere |
 
 ```bash
 python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/quick_check.py <project-root>

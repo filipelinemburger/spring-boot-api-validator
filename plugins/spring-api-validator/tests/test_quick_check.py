@@ -78,6 +78,46 @@ class QuickCheckTest(unittest.TestCase):
         self.assertNotIn("QC16", rules(skipped))
 
 
+class SchemaLimitsTest(unittest.TestCase):
+    """QC20: request limits vs. database columns."""
+
+    def test_wage_copied_into_narrower_column(self):
+        f = [x for x in check("double-accept-transfers") if x["rule"] == "QC20"]
+        wage = [x for x in f if "MakeOfferRequest.wage" in x["message"]]
+        self.assertEqual(len(wage), 1)
+        self.assertIn("players.wage NUMERIC(10,2)", wage[0]["message"])  # the narrower of the two wage columns
+        self.assertEqual(wage[0]["confidence"], "verify")
+
+    def test_matching_limits_and_lookups_stay_quiet(self):
+        # notes: @Size limits equal the VARCHAR columns; LoginRequest only looks values up
+        self.assertEqual([x for x in check("boot4-jwt-error-dispatch") if x["rule"] == "QC20"], [])
+
+    def test_migration_history_and_liquibase(self):
+        schema = {}
+        quick_check.parse_sql_schema(
+            "CREATE TABLE IF NOT EXISTS public.users (\n  id UUID PRIMARY KEY,\n  name VARCHAR(50) NOT NULL,\n"
+            "  CONSTRAINT uq UNIQUE (name)\n);\n"
+            "ALTER TABLE users ADD COLUMN nick varchar(20), ADD COLUMN bio TEXT;\n"
+            "ALTER TABLE users ALTER COLUMN name TYPE VARCHAR(80);\n"
+            "ALTER TABLE users RENAME COLUMN nick TO handle;\n"
+            "-- ALTER TABLE users ADD COLUMN ignored VARCHAR(1);\n"
+            "ALTER TABLE accounts ADD balance NUMERIC(12, 2);\n", "V1__x.sql", schema)
+        quick_check.parse_liquibase_xml(
+            '<changeSet id="1"><createTable tableName="orders"><column name="code" type="varchar(12)"/>'
+            '<column name="total" type="DECIMAL(10,2)"/></createTable>'
+            '<modifyDataType tableName="orders" columnName="code" newDataType="varchar(16)"/></changeSet>',
+            "changelog.xml", schema)
+        limits = {k: v[0] for k, v in schema.items()}
+        self.assertEqual(limits[("users", "name")], ("varchar", 80))       # ALTER … TYPE wins over CREATE
+        self.assertEqual(limits[("users", "handle")], ("varchar", 20))     # renamed column keeps its limit
+        self.assertNotIn(("users", "nick"), limits)
+        self.assertNotIn(("users", "ignored"), limits)                     # commented out
+        self.assertNotIn(("users", "bio"), limits)                         # TEXT has no limit
+        self.assertEqual(limits[("accounts", "balance")], ("numeric", 12, 2))
+        self.assertEqual(limits[("orders", "code")], ("varchar", 16))
+        self.assertEqual(limits[("orders", "total")], ("numeric", 10, 2))
+
+
 class DiffScopeTest(unittest.TestCase):
     """--diff-base reports only findings in files the branch changed."""
 

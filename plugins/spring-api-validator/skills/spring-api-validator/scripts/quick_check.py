@@ -77,6 +77,7 @@ RULES = {
     "QC17": ("bcrypt-password-length", "Password limit above BCrypt's 72-byte maximum"),
     "QC18": ("error-dispatch-401", "Unhandled errors likely reach clients as 401 (stateless token filter, /error not permitted)"),
     "QC19": ("kotlin-constraint-target", "Kotlin constraint on a constructor property without @field:"),
+    "QC20": ("schema-limits", "Request field allows values longer or larger than the database column it's stored in"),
 }
 
 
@@ -271,6 +272,8 @@ def parse_types(src):
         cut = max(back.rfind(";"), back.rfind("}"), back.rfind("{"))
         annos = [a.split(".")[-1] for a in re.findall(r"@([\w.]+)", back[cut + 1:])]
         t = TypeInfo(name, kind, src, src.line(m.start()), set(annos))
+        tm = re.search(r'@(?:[\w.]+\.)?Table\s*\(\s*(?:[^)]*?\bname\s*=\s*)?"([^"]+)"', back[cut + 1:])
+        t.table = tm.group(1) if tm else None
         j = m.end()
         if text.startswith("<", j):  # generics
             depth = 0
@@ -416,6 +419,143 @@ def boot_version(build_files):
 def is_main_source(path):
     p = path.replace(os.sep, "/")
     return "/src/test/" not in p and "/src/it/" not in p and "/test/" not in p.split("/src/")[0]
+
+
+# ---------------------------------------------------------------------------------------------
+# Database schema limits (Flyway/plain SQL, Liquibase XML, JPA @Column)
+
+def snake(name):
+    """Spring Boot's default physical naming: managerName -> manager_name, OrderItem -> order_item."""
+    return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", name).lower()
+
+
+def parse_col_type(type_text):
+    """('varchar', length) | ('numeric', precision, scale) | None for a SQL column type."""
+    t = type_text.strip().lower()
+    m = re.match(r"(?:n?varchar2?|character\s+varying|varying\s+character|n?char(?:acter)?)\s*\(\s*(\d+)", t)
+    if m:
+        return ("varchar", int(m.group(1)))
+    m = re.match(r"(?:numeric|decimal|number|dec)\s*\(\s*(\d+)\s*(?:,\s*(\d+))?\s*\)", t)
+    if m:
+        return ("numeric", int(m.group(1)), int(m.group(2) or 0))
+    return None
+
+
+def _ident(s):
+    return s.strip().strip('"`[]').split(".")[-1].strip('"`[]').lower()
+
+
+def parse_sql_schema(text, rel, schema):
+    """Apply CREATE TABLE / ALTER TABLE statements in order to `schema` {(table, column): (limit, source)}."""
+    text = re.sub(r"--[^\n]*", lambda m: " " * len(m.group(0)), text)
+    text = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S)
+    line_of = lambda pos: text.count("\n", 0, pos) + 1  # noqa: E731
+    ident = r'("[^"]+"|`[^`]+`|\[[^\]]+\]|[\w.]+)'
+    for m in re.finditer(rf"create\s+(?:temporary\s+)?table\s+(?:if\s+not\s+exists\s+)?{ident}\s*\(", text, re.I):
+        table = _ident(m.group(1))
+        body, _ = balanced_args(text, m.end() - 1)
+        for part in split_top_level(body):
+            p = part.strip()
+            if not p or re.match(r"(constraint|primary|unique|foreign|check|index|key|exclude)\b", p, re.I):
+                continue
+            cm = re.match(ident + r"\s+(.+)", p, re.S)
+            if cm:
+                limit = parse_col_type(cm.group(2))
+                if limit:
+                    schema[(table, _ident(cm.group(1)))] = (limit, f"{rel}:{line_of(text.find(p, m.start()))}")
+    for m in re.finditer(rf"alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?{ident}\s+(.*?);", text, re.I | re.S):
+        table, actions = _ident(m.group(1)), m.group(2)
+        src_line = f"{rel}:{line_of(m.start())}"
+        for act in split_top_level(actions):
+            a = act.strip()
+            am = re.match(rf"add\s+(?:column\s+)?(?:if\s+not\s+exists\s+)?{ident}\s+(.+)", a, re.I | re.S)
+            if am and not re.match(r"(constraint|primary|unique|foreign|check|index)\b", am.group(1), re.I):
+                limit = parse_col_type(am.group(2))
+                if limit:
+                    schema[(table, _ident(am.group(1)))] = (limit, src_line)
+                continue
+            am = re.match(rf"(?:alter|modify)\s+(?:column\s+)?{ident}\s+(?:set\s+data\s+)?(?:type\s+)?(.+)", a, re.I | re.S)
+            if am:
+                limit = parse_col_type(am.group(2))
+                if limit:
+                    schema[(table, _ident(am.group(1)))] = (limit, src_line)
+                continue
+            am = re.match(rf"rename\s+column\s+{ident}\s+to\s+{ident}", a, re.I)
+            if am and (table, _ident(am.group(1))) in schema:
+                schema[(table, _ident(am.group(2)))] = schema.pop((table, _ident(am.group(1))))
+
+
+def parse_liquibase_xml(text, rel, schema):
+    for tag in re.finditer(r"<(createTable|addColumn|modifyDataType)\b([^>]*?)(/?)>", text, re.S):
+        kind, attrs = tag.group(1), tag.group(2)
+        tm = re.search(r'tableName\s*=\s*"([^"]+)"', attrs)
+        if not tm:
+            continue
+        table = tm.group(1).lower()
+        line = f"{rel}:{text.count(chr(10), 0, tag.start()) + 1}"
+        if kind == "modifyDataType":
+            cm = re.search(r'columnName\s*=\s*"([^"]+)"', attrs)
+            ty = re.search(r'newDataType\s*=\s*"([^"]+)"', attrs)
+            if cm and ty and parse_col_type(ty.group(1)):
+                schema[(table, cm.group(1).lower())] = (parse_col_type(ty.group(1)), line)
+            continue
+        if tag.group(3):  # self-closing <createTable …/> has no columns
+            continue
+        close = text.find(f"</{kind}>", tag.end())
+        body = text[tag.end():close if close != -1 else len(text)]
+        for col in re.finditer(r"<column\b([^>]*)>", body):
+            nm = re.search(r'\bname\s*=\s*"([^"]+)"', col.group(1))
+            ty = re.search(r'\btype\s*=\s*"([^"]+)"', col.group(1))
+            if nm and ty and parse_col_type(ty.group(1)):
+                schema[(table, nm.group(1).lower())] = (parse_col_type(ty.group(1)), line)
+
+
+def load_schema(root):
+    """Column limits from migrations, applied in version order (V1__, V2__, … then the rest)."""
+    files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        parts = os.path.relpath(dirpath, root).replace(os.sep, "/").split("/")
+        if "test" in parts or not ("main" in parts or "db" in parts or "migration" in parts or "changelog" in parts):
+            continue  # migrations live under src/main/resources (or a top-level db/ folder), never in tests
+        rel_dir = "/".join(parts)
+        for fn in filenames:
+            if fn.endswith(".sql") or (fn.endswith(".xml") and ("changelog" in fn.lower() or "liquibase" in rel_dir.lower()
+                                                                or "changelog" in rel_dir.lower())):
+                files.append(os.path.join(dirpath, fn))
+
+    def order(path):
+        m = re.match(r"V(\d+(?:[._]\d+)*)__", os.path.basename(path))
+        return (0, [int(x) for x in re.split(r"[._]", m.group(1))]) if m else (1, [os.path.basename(path)])
+
+    schema = {}
+    for path in sorted(files, key=order):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        rel = os.path.relpath(path, root)
+        if path.endswith(".sql"):
+            parse_sql_schema(text, rel, schema)
+        else:
+            parse_liquibase_xml(text, rel, schema)
+    return schema
+
+
+def describe_limit(limit):
+    if limit[0] == "varchar":
+        return f"VARCHAR({limit[1]})"
+    return f"NUMERIC({limit[1]},{limit[2]})"
+
+
+def narrower(a, b):
+    """The more restrictive of two limits of the same kind."""
+    if a is None or a[0] != b[0]:
+        return b if a is None else a
+    if a[0] == "varchar":
+        return a if a[1] <= b[1] else b
+    return a if (a[1] - a[2], a[2]) <= (b[1] - b[2], b[2]) else b
 
 
 # ---------------------------------------------------------------------------------------------
@@ -726,6 +866,93 @@ def run_checks(root, only=None, skip=None):
                 rep.add("QC19", "error", src.rel, f.line,
                         f"Constraint on constructor property {t.name}.{f.name} targets the constructor parameter, "
                         f"which Bean Validation ignores.", "Use the field target, e.g. @field:NotBlank.")
+
+    # QC20 — request limits vs. database columns
+    schema = load_schema(root)
+    column_limits = {}  # field name -> [(limit, entity, "table.column", source)]
+    for t in types.values():
+        if not t.is_entity:
+            continue
+        table = (t.table or snake(t.name)).lower()
+        for f in t.fields:
+            col_anno = f.anno("Column")
+            col = snake(f.name)
+            limit, source = None, None
+            if col_anno:
+                nm = re.search(r'\bname\s*=\s*"([^"]+)"', col_anno[1])
+                col = nm.group(1).lower() if nm else col
+                ln = re.search(r"\blength\s*=\s*(\d+)", col_anno[1])
+                pr = re.search(r"\bprecision\s*=\s*(\d+)", col_anno[1])
+                sc = re.search(r"\bscale\s*=\s*(\d+)", col_anno[1])
+                if ln:
+                    limit, source = ("varchar", int(ln.group(1))), f"{t.src.rel}:{f.line}"
+                elif pr:
+                    limit, source = ("numeric", int(pr.group(1)), int(sc.group(1)) if sc else 0), f"{t.src.rel}:{f.line}"
+            if (table, col) in schema:
+                db_limit, db_source = schema[(table, col)]
+                if narrower(limit, db_limit) is db_limit:
+                    limit, source = db_limit, db_source
+            if limit:
+                column_limits.setdefault(f.name, []).append((limit, t.name, f"{table}.{col}", source))
+
+    for t in reachable.values():
+        # Entities are QC15's job; lookup-only bodies (login, search, filters) never write their values.
+        if t.is_entity or re.search(r"Login|Search|Filter|Query|Criteria|Lookup|Credentials", t.name):
+            continue
+        for f in t.fields:
+            rt = raw_type(f.type)
+            kind = "varchar" if rt in STRING_TYPES else "numeric" if rt in NUMERIC_TYPES else None
+            cands = [c for c in column_limits.get(f.name, []) if c[0][0] == kind]
+            if not kind or not cands:
+                continue
+            linked = [c for c in cands if c[1] in t.name]
+            if not linked and kind == "varchar":
+                # Strings matched by field name only are too often codes the service validates against a fixed
+                # list before storing; numbers matched by name (money copied into a narrower column) stay in.
+                continue
+            pool, confidence = (linked, "certain") if linked else (cands, "verify")
+            best = None
+            for c in pool:
+                if best is None or narrower(best[0], c[0]) is c[0]:
+                    best = c
+            limit, entity, column, source = best
+            others = "" if linked or len(cands) == 1 else \
+                f" (narrowest of {len(cands)} columns named after '{f.name}': {', '.join(c[2] for c in cands)})"
+            if kind == "varchar":
+                size = f.anno("Size") or f.anno("Length")
+                mx = re.search(r"max\s*=\s*(\d+)", size[1]) if size else None
+                if mx and int(mx.group(1)) <= limit[1]:
+                    continue
+                allowed = f"up to {mx.group(1)} characters" if mx else "any length"
+                rep.add("QC20", "warning", t.src.rel, f.line,
+                        f"{t.name}.{f.name} allows {allowed}, but it is stored in {column} {describe_limit(limit)} "
+                        f"({source}){others}. Longer input passes validation and then fails when the row is written: "
+                        f"a database error (500, or whatever the advice maps it to) instead of a 400.",
+                        f"Add @Size(max = {limit[1]}) (or the column's real limit) so validation rejects it with a 400.",
+                        confidence=confidence)
+            else:
+                whole = limit[1] - limit[2]
+                digits = f.anno("Digits")
+                dint = re.search(r"integer\s*=\s*(\d+)", digits[1]) if digits else None
+                bounded = bool(dint and int(dint.group(1)) <= whole)
+                for name in ("DecimalMax", "Max"):
+                    a = f.anno(name)
+                    v = re.search(r'(?:value\s*=\s*)?"?(-?[\d.]+)"?', a[1]) if a else None
+                    if v:
+                        try:
+                            bounded = bounded or float(v.group(1)) < 10 ** whole
+                        except ValueError:
+                            pass
+                if bounded:
+                    continue
+                biggest = ("9" * whole or "0") + ("." + "9" * limit[2] if limit[2] else "")
+                rep.add("QC20", "warning", t.src.rel, f.line,
+                        f"{t.name}.{f.name} has no upper bound, but it is stored in {column} {describe_limit(limit)} "
+                        f"({source}){others}, which holds at most {biggest}. A larger value passes validation and then "
+                        f"overflows when the row is written — possibly later, in another request or a batch job that "
+                        f"copies it there.",
+                        f"Add @Digits(integer = {whole}, fraction = {limit[2]}) or @DecimalMax(\"{biggest}\").",
+                        confidence=confidence)
 
     # QC16 — not-found handling
     for s in sources:
