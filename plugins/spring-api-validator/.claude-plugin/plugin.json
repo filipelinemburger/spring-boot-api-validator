@@ -1,7 +1,7 @@
 {
   "name": "spring-api-validator",
-  "version": "0.7.0",
-  "description": "Validate a Spring Boot REST API: HTTP method semantics, paths, parameter binding, Bean Validation, request/response DTOs, Jackson, status codes, error handling and resource ownership, checked against the project's own API rules.",
+  "version": "0.7.1",
+  "description": "Review Spring Boot REST APIs (Java or Kotlin, MVC or WebFlux) for real defects: HTTP verb and status semantics, parameter binding, Bean Validation, DTOs and Jackson, error handling, resource ownership, database column limits and OpenAPI contract drift. Includes a fast standalone checker, a /validate-api command for branches and pull requests, and a GitHub Action.",
   "icon": "assets/icon.png",
   "author": {
     "name": "filipelinemburger"
@@ -18,6 +18,8 @@
     "validation",
     "code-review",
     "java",
-    "kotlin"
+    "kotlin",
+    "webflux",
+    "github-action"
   ]
 }

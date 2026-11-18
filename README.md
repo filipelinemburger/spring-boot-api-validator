@@ -11,8 +11,9 @@ A Claude Code plugin (and Agent Skill) that reviews the REST API of a Spring Boo
 - **Request/response objects** — entity exposure, recursion and lazy loading, mass assignment, Jackson construction and naming, money/date/id types.
 - **Errors** — unmapped exceptions, inconsistent error bodies, and where unhandled errors end up (including the stateless-JWT "every error becomes a 401" trap).
 - **Ownership and business rules** — every id scoped to the caller, the same rule enforced on every path, double-submission of money-moving actions.
+- **API contract** — when the project publishes an OpenAPI/Swagger spec (or uses springdoc annotations): documented operations that don't exist, documented statuses the code doesn't return, required fields it doesn't enforce, and field names or types that differ between the spec and the JSON.
 
-It is version-aware (Spring Boot 2.x, 3.0–3.1, 3.2+, 4.x), reads the project's global config before judging anything, and follows your team's own conventions when you write them down.
+It covers Java and Kotlin, Spring MVC and WebFlux (annotated controllers and functional routes), is version-aware (Spring Boot 2.x, 3.0–3.1, 3.2+, 4.x), reads the project's global config before judging anything, and follows your team's own conventions when you write them down. Besides the review it ships a fast [standalone checker](#quick-check-no-ai-ci-friendly), a [`/validate-api` command](#the-validate-api-command) for branches and pull requests, and [GitHub Actions](#github-actions). See the [changelog](CHANGELOG.md) for what changed in each version.
 
 ## Install
 
