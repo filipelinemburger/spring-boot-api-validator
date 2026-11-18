@@ -31,7 +31,8 @@ With `--diff`:
 1. `git merge-base <base> HEAD`, then `git diff --name-only <merge-base>` plus untracked files (`git ls-files --others --exclude-standard`) give the changed files.
 2. In scope: every endpoint whose controller changed, plus every endpoint that reads or returns a changed DTO, calls a changed service/repository method, or is affected by a changed advice, security config, Jackson/MVC config or `application*.yml`. Use `scripts/list_endpoints.py` and a search for the changed types to find them.
 3. Run the quick check limited to the diff: `python3 <main-skill-dir>/scripts/quick_check.py <project-root> --diff-base <base>`. Its findings are leads; confirm each.
-4. Review the endpoints in scope with the full workflow. Look at the rest of the API only to judge consistency (a new endpoint that breaks an existing convention).
+4. Review the endpoints in scope with the full workflow — including reading the main skill's reference files for every area they touch. A diff is a smaller scope, not a lighter check. Look at the rest of the API only to judge consistency (a new endpoint that breaks an existing convention).
+5. For every new or changed write endpoint, write down which authorization check it performs (e.g. `requireOwned` + `requireInSave`) and which check the existing write endpoints on the same kind of resource perform (e.g. `requireManagedClub`). A new endpoint with a weaker check than its siblings is an Error even when the code compiles and the save-level ownership is right. New endpoints are where these gaps appear.
 
 If nothing in the diff touches the API (no controllers, DTOs, services they call, or web/security config), say so in one line and stop.
 
@@ -46,6 +47,8 @@ Write the report to `--out` if given, and always show it in the final message.
 Only with `--comment`, and only findings this change introduces (not pre-existing ones):
 
 - **Inline comments**: if the tool `mcp__github_inline_comment__create_inline_comment` is available (it is in the GitHub Action workflow), post one comment per finding on the changed line it concerns: the severity and title on the first line, then the problem, the fix and the confidence, in two to five short lines. Group a repeated mistake into one comment on its first occurrence that lists the other lines. Post Errors and Warnings inline; leave Suggestions for the summary.
+  - Finish the whole review and write the report before posting anything, so every comment reflects the final findings.
+  - Comments can't be edited or deleted afterwards, so get the line right first: re-read the file in the PR's version and confirm the target line contains the code the comment is about (for a multi-line declaration, use the line with the annotation or call in question). Never post a second comment to correct a first one; if a comment did land on the wrong line, say so once in the summary comment.
 - **Summary comment**: post the report summary (counts, the inventory rows in scope, the Suggestions and the "Looks good" list) as one top-level comment with `gh pr comment <N> --repo <owner/repo> --body-file <file>`. If `gh` isn't available or fails, append the full report to `$GITHUB_STEP_SUMMARY` when that variable is set, and say where the report went.
 - If the PR has no findings, post a single short summary comment saying what was checked.
 

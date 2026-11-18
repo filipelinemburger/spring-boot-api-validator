@@ -45,7 +45,15 @@ python3 <skill-dir>/scripts/quick_check.py <project-root>
 
 ### 5. Check each endpoint
 
-Go through these areas, reading the reference file for an area when an endpoint touches it. The references explain *why* each rule matters and how Spring behaves at runtime, which is what lets you tell a real bug from a style preference.
+These facts are the ones reviews most often get wrong from memory. Check them against the project's versions before writing any finding that touches them:
+
+- **Spring Framework 6.1+ (Boot 3.2+)** validates constraint annotations on `@PathVariable`/`@RequestParam`/`@RequestHeader` by itself — no class-level `@Validated` is needed, and adding one switches to the AOP path (`ConstraintViolationException`, a 500 unless handled). Before 6.1, those constraints need class-level `@Validated`.
+- `spring-boot-starter-parent` and the Spring Boot Gradle plugin turn on `-parameters`; unnamed `@PathVariable`s only break without them (and only on 6.1+).
+- Spring Data 3.x `deleteById` ignores a missing id; 2.x throws `EmptyResultDataAccessException`.
+- Spring MVC answers HEAD by running the GET handler, so a GET's side effects happen on HEAD too.
+- MockMvc doesn't perform error dispatches; anything about `/error` behaviour has to be confirmed against a running server.
+
+Go through these areas, reading the reference file for an area when an endpoint touches it. A small scope (one controller, a diff) means fewer endpoints, not a shallower check: still read the reference for every area the endpoints in scope touch. The references explain *why* each rule matters and how Spring behaves at runtime, which is what lets you tell a real bug from a style preference.
 
 | Area | What to check | Reference |
 |---|---|---|
@@ -104,6 +112,8 @@ Use this structure:
 ## Looks good
 <brief list of things checked that are correct, so the reader knows they were covered — e.g. "action endpoint POST /orders/{id}/refunds returns 201 + Location">
 ```
+
+"Looks good" is a claim like any finding, so it needs the same evidence. For ownership in particular, name the exact check each write endpoint performs and compare it with its siblings: "`replace` checks `requireOwned` + `requireInSave`" is not the same as "`hire` checks `requireManagedClub`", and when sibling writes use the narrower check, the broader one is a finding, not something that looks good.
 
 Severity guide:
 - **Error**: wrong behaviour now — validation that never runs, a binding that throws 500, a safe verb with side effects, data loss (PUT/PATCH nulling fields), exposed secrets, a handler matching every HTTP method.
