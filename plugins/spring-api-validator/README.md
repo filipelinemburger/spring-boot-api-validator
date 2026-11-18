@@ -10,17 +10,15 @@ Install it from the Claude plugin directory, or from its own `spring-tools` mark
 
 - Ask in plain words in a Spring project: "validate the REST API in this project", "check my endpoints' HTTP methods and status codes", "review the new ProductController before I open the PR". The `spring-api-validator` skill loads on its own.
 - `/spring-api-validator:validate-api [scope] [--diff [base]] [--errors-only] [--out file] [--comment owner/repo/pull/N]` — review the whole API, one controller or endpoint, or only what a branch changes; optionally post the findings on a pull request.
-- `python3 skills/spring-api-validator/scripts/quick_check.py <project-root>` — the fast, deterministic checker the review starts from (also usable on its own and in CI: `--json`, `--format github`, `--fail-on error`, `--diff-base origin/main`).
 
-Full documentation, the GitHub Action and example workflows: https://github.com/filipelinemburger/spring-boot-api-validator
+The plugin is instructions and reference files only. The project's repository also offers a standalone, AI-free checker and a GitHub Action for CI: https://github.com/filipelinemburger/spring-boot-api-validator
 
 ## What it runs, reads and sends
 
-- **Runs locally**: three standard-library Python 3 scripts in `skills/spring-api-validator/scripts/` (`list_endpoints.py`, `quick_check.py`, `openapi_spec.py`). They read the project's source files, build files, `application*.yml/properties`, migrations and OpenAPI specs, and print results. With `--diff-base` they run read-only `git` commands (`rev-parse`, `merge-base`, `diff --name-only`, `ls-files`). They make no network requests and write no files.
-- **The review itself** reads the project's code and configuration through Claude Code's normal tools. It writes a report file only when you ask for one, and changes code only if you ask it to apply fixes.
+- **The review** reads the project's code, build files, configuration, migrations and OpenAPI specs through Claude Code's normal tools, and may run read-only `git` commands (`diff`, `merge-base`, `ls-files`, `blame`) to find what a branch changed. It writes a report file only when you ask for one (`--out`), and changes code only if you ask it to apply fixes.
 - **Optional runtime check**: only when you ask for it (or approve it for a finding that needs it), it may start the application locally and send HTTP requests to that local or test instance — never to other hosts, and write requests only against local data.
 - **Pull-request comments**: only with `--comment`, the `validate-api` command posts review comments and a summary on that pull request through GitHub (the GitHub inline-comment tool and/or the `gh` CLI, with your existing GitHub credentials). Nothing else is sent anywhere.
-- **No telemetry**, no data collection, no credentials or tokens read or stored by the plugin.
+- **No bundled programs**, no telemetry, no data collection, no credentials or tokens read or stored by the plugin.
 
 ## License
 

@@ -2,6 +2,16 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
+## 0.9.0 — 2026-11-18
+### Changed
+- **One edition.** The quick-check scripts moved out of the plugin to `checker/` at the repository root, so the plugin on `main` is what the Claude plugin directory accepts (Markdown, JSON, YAML and the icon only). The skill and `/validate-api` build the inventory and do the mechanical checks by reading the code — measured in 0.8.0 at the same accuracy and cost as with the scripts.
+- The GitHub Action runs `checker/quick_check.py`; its inputs and outputs are unchanged. Run the checker by hand with `python3 checker/quick_check.py <project-root>`.
+- Plugin and marketplace descriptions no longer mention the checker; the plugin README says what the plugin runs and sends without it.
+### Removed
+- The directory-edition build (`tools/`, `directory/`), its CI job and the `directory` branch: the directory tracks `main` instead.
+### Added
+- `tests/test_plugin_folder.py` keeps the plugin folder within the directory's rules.
+
 ## 0.8.0 — 2026-11-18
 ### Added
 - **Directory edition** for the Claude plugin directory, which accepts no bundled scripts from unverified organizations: `tools/build_directory_edition.py` builds the plugin without `scripts/`, with its own README (`directory/README.md`) and a description that doesn't claim the checker, and checks every file against the directory's rules (allowed types, no `#!`, UTF-8, valid JSON, size). CI rebuilds it on every push to `main` and publishes it to the `directory` branch, which the directory tracks.

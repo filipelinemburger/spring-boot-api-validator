@@ -2,7 +2,7 @@
 # Copy to .github/workflows/ in your Spring Boot repository.
 #
 # On every pull request that touches Java/Kotlin sources, build files or application config, it runs
-# the plugin's quick_check.py on the files the PR changes and shows findings as annotations on those
+# this repository's checker/quick_check.py on the files the PR changes and shows findings as annotations on those
 # lines, plus a table in the job summary. The job fails on Errors (change fail-on to tune it).
 
 name: Spring API quick check

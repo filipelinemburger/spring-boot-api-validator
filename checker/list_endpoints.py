@@ -3,7 +3,7 @@
 
 Usage: python3 list_endpoints.py <project-root> [--json]
 
-Regex-based first pass for the spring-api-validator skill: it finds
+Regex-based endpoint inventory for the spring-api-validator checker: it finds
 @RequestMapping / @GetMapping / @PostMapping / @PutMapping / @PatchMapping /
 @DeleteMapping in .java and .kt files, combines class-level and method-level
 paths, and prefixes the context path / base path found in application config.

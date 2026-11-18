@@ -4,7 +4,7 @@
 Usage:
     python3 quick_check.py <project-root> [--json] [--fail-on error|warning|never] [--rules QC03,QC08]
 
-Part of the spring-api-validator skill. Standard-library Python 3, no build or running app needed.
+Part of the spring-api-validator project (the standalone checker). Standard-library Python 3, no build or running app needed.
 It reads .java/.kt sources under src/main (and the build file and application config) and reports
 pattern matches with file:line, a rule id, what goes wrong at runtime and the fix.
 

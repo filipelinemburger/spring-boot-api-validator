@@ -4,7 +4,7 @@ Read when the app uses Spring WebFlux, or functional routes (`RouterFunction`, K
 
 ## Paths and inventory
 - No servlet context path: `spring.webflux.base-path` prefixes every route (annotated and functional).
-- Functional routes are endpoints: `RouterFunctions.route().GET("/x", handler::m)`, `route(GET("/x"), …)`, `coRouter { GET("/x", …) }`. `list_endpoints.py` lists them when `scripts/` is present; either way, resolve nested prefixes (`.path("/api", …)`, `.nest`, `"/api".nest { }`) by reading the router. `request.pathVariable("x")` with a name not in the template → `IllegalArgumentException` 500.
+- Functional routes are endpoints: `RouterFunctions.route().GET("/x", handler::m)`, `route(GET("/x"), …)`, `coRouter { GET("/x", …) }`. Resolve nested prefixes (`.path("/api", …)`, `.nest`, `"/api".nest { }`) by reading the router. `request.pathVariable("x")` with a name not in the template → `IllegalArgumentException` 500.
 
 ## Validation
 - Annotated handlers: `@Valid @RequestBody` works; failures raise `WebExchangeBindException` (400 by default; check the advice maps it).

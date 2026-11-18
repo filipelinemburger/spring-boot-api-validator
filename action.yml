@@ -44,7 +44,7 @@ runs:
         BASE_REF: ${{ github.base_ref }}
       run: |
         set -uo pipefail
-        script="$GITHUB_ACTION_PATH/plugins/spring-api-validator/skills/spring-api-validator/scripts/quick_check.py"
+        script="$GITHUB_ACTION_PATH/checker/quick_check.py"
         args=("$INPUT_PATH")
         [ -n "$INPUT_SKIP" ] && args+=(--skip "$INPUT_SKIP")
         [ -n "$INPUT_RULES" ] && args+=(--rules "$INPUT_RULES")

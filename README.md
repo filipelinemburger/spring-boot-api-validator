@@ -13,7 +13,7 @@ A Claude Code plugin (and Agent Skill) that reviews the REST API of a Spring Boo
 - **Ownership and business rules** — every id scoped to the caller, the same rule enforced on every path, double-submission of money-moving actions.
 - **API contract** — when the project publishes an OpenAPI/Swagger spec (or uses springdoc annotations): documented operations that don't exist, documented statuses the code doesn't return, required fields it doesn't enforce, and field names or types that differ between the spec and the JSON.
 
-It covers Java and Kotlin, Spring MVC and WebFlux (annotated controllers and functional routes), is version-aware (Spring Boot 2.x, 3.0–3.1, 3.2+, 4.x), reads the project's global config before judging anything, and follows your team's own conventions when you write them down. Besides the review it ships a fast [standalone checker](#quick-check-no-ai-ci-friendly), a [`/validate-api` command](#the-validate-api-command) for branches and pull requests, and [GitHub Actions](#github-actions). See the [changelog](CHANGELOG.md) for what changed in each version.
+It covers Java and Kotlin, Spring MVC and WebFlux (annotated controllers and functional routes), is version-aware (Spring Boot 2.x, 3.0–3.1, 3.2+, 4.x), reads the project's global config before judging anything, and follows your team's own conventions when you write them down. Besides the review, this repository has a fast [standalone checker](#quick-check-no-ai-ci-friendly), a [`/validate-api` command](#the-validate-api-command) for branches and pull requests, and [GitHub Actions](#github-actions). See the [changelog](CHANGELOG.md) for what changed in each version.
 
 ## Install
 
@@ -33,7 +33,7 @@ claude plugin install spring-api-validator@spring-tools
 
 Update later with `/plugin marketplace update spring-tools` (or turn on auto-update for the marketplace in `/plugin`).
 
-**Claude plugin directory edition.** The Claude plugin directory doesn't accept bundled scripts from unverified publishers, so the directory lists an edition without the quick-check scripts, built from this repository's `directory` branch. It runs the same review — doing the mechanical checks by reading the code instead — and has the same `/validate-api` command; the standalone checker and the GitHub Action stay here. Install from this marketplace if you want the checker inside the plugin.
+The plugin itself is instructions and reference files only, as the Claude plugin directory requires; the standalone checker and the GitHub Action below live in this repository.
 
 ## Use
 
@@ -68,7 +68,7 @@ Add `.api-validator.md` at the repository root to describe your conventions (pat
 
 ## Quick check (no AI, CI-friendly)
 
-The plugin ships a standalone checker the skill runs first, and that you can run on its own — in a terminal or in CI. It needs only Python 3 (standard library), takes about a second on a few hundred files, and flags the defects that can be matched exactly:
+[`checker/`](checker) is a standalone checker you run on its own — in a terminal or in CI. It isn't part of the plugin (the review does these checks by reading the code). It needs only Python 3 (standard library), takes about a second on a few hundred files, and flags the defects that can be matched exactly:
 
 | Rule | What it catches |
 |---|---|
@@ -83,7 +83,7 @@ The plugin ships a standalone checker the skill runs first, and that you can run
 | QC25–QC29 | OpenAPI contract drift: documented operations with no handler (and undocumented handlers); documented success statuses the handler doesn't return; documented-required fields the DTO doesn't enforce; property names/types that differ between the spec schema and the DTO's JSON; springdoc `@ApiResponse`/`@Schema(required)` that contradict the code. Reads OpenAPI 3 and Swagger 2, YAML or JSON |
 
 ```bash
-python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/quick_check.py <project-root>
+python3 checker/quick_check.py <project-root>
 python3 …/quick_check.py <project-root> --json                    # machine-readable
 python3 …/quick_check.py <project-root> --fail-on error --skip QC16  # exit 1 on errors, for CI
 python3 …/quick_check.py --list-rules
@@ -125,10 +125,9 @@ The skill itself is a standard Agent Skill folder — [`plugins/spring-api-valid
   Every case also checks precision: that no finding makes a materially wrong claim, that working guards are acknowledged, and that latent issues aren't over-rated.
   They live outside the plugin folder, so they aren't shipped to users. Run them with `claude plugin eval plugins/spring-api-validator --eval-dir evals --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
 - Validate before publishing: `claude plugin validate . --strict`.
-- `scripts/list_endpoints.py` (standard-library Python 3) prints the endpoint inventory the skill starts from: `python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/list_endpoints.py <project-root>`.
-- `.github/workflows/ci.yml` runs the unit tests, validates the plugin and marketplace, and runs this repository's own action on an eval app to check its outputs and failure behaviour. On pushes to `main` it also rebuilds the directory edition and publishes it to the `directory` branch.
-- The directory edition: `python3 tools/build_directory_edition.py --out <dir>` builds it (the plugin without `scripts/`, the README from `directory/README.md`, a description without the checker) and checks every file against the directory's rules. Don't edit the `directory` branch by hand.
-- `tests/test_quick_check.py` (repository root) runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet; `tests/test_directory_edition.py` checks the directory build. Run both with `python3 -m unittest discover tests`.
+- `checker/list_endpoints.py` (standard-library Python 3) prints an endpoint inventory: `python3 checker/list_endpoints.py <project-root>`; `checker/openapi_spec.py <project-root>` lists the operations it reads from OpenAPI/Swagger specs.
+- `.github/workflows/ci.yml` runs the unit tests, validates the plugin and marketplace, and runs this repository's own action on an eval app to check its outputs and failure behaviour.
+- `tests/test_quick_check.py` (repository root) runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet; `tests/test_plugin_folder.py` keeps the plugin folder within the Claude plugin directory's rules (Markdown, JSON, YAML and images only, no `#!` files). Run both with `python3 -m unittest discover tests`.
 
 ## License
 

@@ -1,4 +1,4 @@
-"""Regression test for scripts/quick_check.py against the eval apps.
+"""Regression test for checker/quick_check.py against the eval apps.
 
 Run from the repository root:  python3 -m unittest discover tests
 It checks that every planted mechanical defect is still detected (recall) and that the clean
@@ -11,9 +11,9 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-PLUGIN = os.path.join(ROOT, "plugins", "spring-api-validator")
+CHECKER = os.path.join(ROOT, "checker")
 EVALS = os.path.join(ROOT, "evals")
-sys.path.insert(0, os.path.join(PLUGIN, "skills", "spring-api-validator", "scripts"))
+sys.path.insert(0, CHECKER)
 
 import quick_check  # noqa: E402
 
@@ -208,7 +208,7 @@ class DiffScopeTest(unittest.TestCase):
         import shutil
         import subprocess
         import tempfile
-        script = os.path.join(PLUGIN, "skills", "spring-api-validator", "scripts", "quick_check.py")
+        script = os.path.join(CHECKER, "quick_check.py")
         with tempfile.TemporaryDirectory() as tmp:
             shutil.copytree(os.path.join(EVALS, "full-audit-order-service", "files"), tmp, dirs_exist_ok=True)
             git = ["git", "-C", tmp, "-c", "user.name=t", "-c", "user.email=t@example.com"]
