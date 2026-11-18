@@ -50,5 +50,9 @@ One line per check: what to look for → what happens at runtime → default sev
 - Same business rule on every path that does the same thing (caps, funds, state checks) → missing on one path W.
 - Controllers doing repository work/transactions → W. Field `@Autowired` → S. `@CrossOrigin("*")` → W. Deleted user's token still valid → W.
 
+## API contract (OpenAPI/Swagger spec or springdoc annotations)  (→ openapi.md)
+- Documented operation with no handler → clients get 404/405 **E**. Documented 2xx ≠ returned status, schema/DTO name or type drift, documented-required field not enforced, `@ApiResponse`/`@Schema(required)` contradicting the code → W. Undocumented endpoints/fields → S.
+- Documented error responses must happen: a documented 404 that's really a 500 (bare `orElseThrow()`), a documented 400 for an unvalidated body → W.
+
 ## Stack-specific  (read only when it applies)
-- Kotlin sources → `kotlin.md`. WebFlux or functional routes (`RouterFunction`, `coRouter`, WebMvc.fn) → `webflux.md`. Boot 2.x or 4.x, or any finding that depends on a version → `versions.md`.
+- Kotlin sources → `kotlin.md`. WebFlux or functional routes (`RouterFunction`, `coRouter`, WebMvc.fn) → `webflux.md`. A published spec or springdoc annotations → `openapi.md`. Boot 2.x or 4.x, or any finding that depends on a version → `versions.md`.

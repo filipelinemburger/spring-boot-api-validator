@@ -129,6 +129,36 @@ class KotlinAndWebFluxTest(unittest.TestCase):
                           ("POST", "/api/stock/{sku}/reservations", "handler::reserve")])
 
 
+class OpenApiDriftTest(unittest.TestCase):
+    def test_drifted_spec(self):
+        f = check("openapi-drift-orders")
+        drift = [x for x in f if x["rule"] in ("QC25", "QC26", "QC27", "QC28", "QC29")]
+        by = collections.Counter((x["rule"], x["severity"]) for x in drift)
+        self.assertEqual(by, collections.Counter({
+            ("QC25", "error"): 1, ("QC25", "suggestion"): 1,     # missing customer-orders op; undocumented DELETE
+            ("QC27", "warning"): 1,                              # 201 documented, 200 returned
+            ("QC26", "warning"): 2,                              # shippingAddress, status not enforced
+            ("QC28", "warning"): 2, ("QC28", "suggestion"): 1,   # orderNumber missing, itemCount type; number extra
+            ("QC29", "warning"): 2}))                            # @ApiResponse 204; @Schema required unchecked
+        self.assertIn("/v1/customers/{customerId}/orders", [x for x in drift if x["severity"] == "error"][0]["message"])
+        # {orderId} vs {id} and the /api prefix must not produce drift for the operations that exist
+        self.assertFalse([x for x in drift if x["rule"] == "QC25" and "{orderId}" in x["message"]])
+
+    def test_yaml_reader(self):
+        import openapi_spec
+        doc = openapi_spec.yaml_load(
+            "openapi: 3.0.3\ninfo:\n  title: A  # comment\n  description: |\n    line: one\n    has # hash\n"
+            "servers:\n  - url: https://x.test/api/v2\ntags: [a, 'b c']\npaths:\n  /x/{id}:\n    get:\n"
+            "      responses:\n        200: {description: ok}\n        '404':\n          description: missing\n")
+        self.assertEqual(doc["info"]["title"], "A")
+        self.assertEqual(doc["info"]["description"], "line: one\nhas # hash")
+        self.assertEqual(doc["tags"], ["a", "b c"])
+        self.assertEqual(sorted(map(str, doc["paths"]["/x/{id}"]["get"]["responses"])), ["200", "404"])
+        spec = openapi_spec.Spec("x.yaml", ".", doc)
+        self.assertEqual(spec.base_path, "/api/v2")
+        self.assertEqual(spec.success_codes(doc["paths"]["/x/{id}"]["get"]), [200])
+
+
 class SchemaLimitsTest(unittest.TestCase):
     """QC20: request limits vs. database columns."""
 

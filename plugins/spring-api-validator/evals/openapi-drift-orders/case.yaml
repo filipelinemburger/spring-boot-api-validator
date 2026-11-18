@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: openapi-drift-orders
+expected_outcome: |
+  contract-review.md finds the drift between src/main/resources/static/openapi.yaml (plus the springdoc annotations) and the code: a documented operation that doesn't exist, 201 documented but 200 returned, a documented-required field not enforced, orderNumber vs number and a string-vs-int itemCount in the response, a documented 404 that is really a 500, an @ApiResponse 204 on a handler returning 200, and a required status the code doesn't check (whose omission ends in a 500). It doesn't invent drift for the renamed path variable or the /api prefix, and treats the undocumented DELETE as minor.
+context:
+  scaffold_script: place-files.sh

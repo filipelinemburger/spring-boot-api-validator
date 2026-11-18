@@ -26,9 +26,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from list_endpoints import (  # noqa: E402  (shared parsing helpers)
-    MAPPING_RE, SKIP_DIRS, balanced_args, join_paths, parse_mapping, skip_annotations,
-    split_top_level, strip_comments,
+    MAPPING_RE, SKIP_DIRS, balanced_args, join_paths, parse_mapping, read_base_paths, scan_functional,
+    skip_annotations, split_top_level, strip_comments,
 )
+import openapi_spec  # noqa: E402
 
 SEVERITIES = ("error", "warning", "suggestion")
 
@@ -90,6 +91,11 @@ RULES = {
     "QC21": ("functional-body-not-validated", "Functional endpoint reads a body whose type has constraints but never validates it"),
     "QC22": ("blocking-in-reactive", "block() in a WebFlux application"),
     "QC23": ("empty-means-200", "Handler can return an empty Mono or null, which becomes 200 with no body instead of 404"),
+    "QC25": ("spec-operation-drift", "Operation in the OpenAPI spec with no handler, or handler missing from the spec"),
+    "QC26": ("spec-required-drift", "Field the spec marks required isn't enforced by the DTO (or the reverse)"),
+    "QC27": ("spec-status-drift", "Success status in the spec differs from what the handler returns"),
+    "QC28": ("spec-schema-drift", "Property names or types differ between the spec schema and the DTO's JSON"),
+    "QC29": ("annotation-doc-drift", "springdoc annotations (@ApiResponse, @Schema required) contradict the code"),
     "QC24": ("advice-skips-functional-routes", "Exception mapped in @ControllerAdvice is thrown from a functional route the advice doesn't cover (WebFlux on Spring 5, or advice scoped by package/type)"),
 }
 
@@ -354,9 +360,10 @@ class Param:
 
 
 class Handler:
-    def __init__(self, src, name, verbs, paths, params, return_type, line, body=""):
+    def __init__(self, src, name, verbs, paths, params, return_type, line, body="", annos=""):
         self.src = src
         self.body = body
+        self.annos = annos
         self.name = name
         self.verbs = verbs        # [] means "every method"
         self.paths = paths
@@ -407,7 +414,9 @@ def parse_handlers(src):
             body = text[brace:matching_brace(text, brace) + 1]
         else:
             body = ""
-        handlers.append(Handler(src, sig_m.group(1), verbs, full_paths, params, ret, src.line(m.start()), body))
+        block_start = max(text.rfind(";", 0, m.start()), text.rfind("}", 0, m.start()), text.rfind("{", 0, m.start())) + 1
+        handlers.append(Handler(src, sig_m.group(1), verbs, full_paths, params, ret, src.line(m.start()), body,
+                                text[block_start:i]))
     return handlers
 
 
@@ -580,6 +589,78 @@ def narrower(a, b):
     if a[0] == "varchar":
         return a if a[1] <= b[1] else b
     return a if (a[1] - a[2], a[2]) <= (b[1] - b[2], b[2]) else b
+
+
+
+# ---------------------------------------------------------------------------------------------
+# OpenAPI drift helpers
+
+HTTP_STATUS = {"OK": 200, "CREATED": 201, "ACCEPTED": 202, "NO_CONTENT": 204, "RESET_CONTENT": 205,
+               "PARTIAL_CONTENT": 206, "MOVED_PERMANENTLY": 301, "FOUND": 302, "SEE_OTHER": 303,
+               "NOT_MODIFIED": 304, "BAD_REQUEST": 400, "NOT_FOUND": 404, "CONFLICT": 409}
+
+
+def success_statuses(h):
+    """Success statuses a handler can return, or None when the code doesn't say (e.g. a computed status)."""
+    m = re.search(r"@ResponseStatus\s*\(\s*(?:(?:code|value)\s*=\s*)?(?:HttpStatus\.)?(\w+)", h.annos)
+    if m and m.group(1) in HTTP_STATUS:
+        return {HTTP_STATUS[m.group(1)]}
+    found = set()
+    for pat, code in ((r"\.created\s*\(", 201), (r"\.noContent\s*\(", 204), (r"\.accepted\s*\(", 202),
+                      (r"ResponseEntity\s*\.\s*ok\b", 200), (r"ResponseEntity\s*\.\s*of\s*\(", 200)):
+        if re.search(pat, h.body):
+            found.add(code)
+    for m in re.finditer(r"(?:\.status|ResponseEntity\s*(?:<[^>]*>)?\s*\()\s*\(?[^;]*?HttpStatus\.(\w+)", h.body):
+        if m.group(1) in HTTP_STATUS and HTTP_STATUS[m.group(1)] < 300:
+            found.add(HTTP_STATUS[m.group(1)])
+    for m in re.finditer(r"\.status\s*\(\s*(2\d\d)\s*\)", h.body):
+        found.add(int(m.group(1)))
+    if found:
+        return found
+    rt = raw_type(h.return_type or "")
+    args = type_args(h.return_type or "")
+    if rt == "ResponseEntity" or (args and raw_type(args[0]) == "ResponseEntity"):
+        return None  # built from a variable or helper we can't see
+    return {200}
+
+
+def norm_path(p):
+    p = re.sub(r"\{[^}]*\}", "{}", p or "/")
+    p = re.sub(r"/+", "/", p)
+    return p.rstrip("/") or "/"
+
+
+def json_name(f, snake_case):
+    a = f.anno("JsonProperty")
+    if a:
+        m = re.search(r'"([^"]+)"', a[1])
+        if m:
+            return m.group(1)
+    return snake(f.name) if snake_case else f.name
+
+
+def schema_kind(schema):
+    t = (schema or {}).get("type")
+    if t:
+        return str(t)
+    if "$ref" in (schema or {}) or "allOf" in (schema or {}) or "properties" in (schema or {}):
+        return "object"
+    return None
+
+
+def java_kind(type_str):
+    rt = raw_type(type_str)
+    if rt in STRING_TYPES or rt in DATE_TYPES or rt in ("UUID", "URI", "URL", "Char", "char", "Character"):
+        return "string"
+    if rt in ("int", "long", "short", "byte", "Integer", "Long", "Short", "Byte", "BigInteger", "Int"):
+        return "integer"
+    if rt in ("double", "float", "Double", "Float"):
+        return "number"
+    if rt in BOOLEAN_TYPES:
+        return "boolean"
+    if rt in COLLECTION_TYPES - {"Map", "MutableMap"} or type_str.strip().endswith("[]"):
+        return "array"
+    return None  # BigDecimal (number or string), enums, objects: don't judge
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1072,6 +1153,157 @@ def run_checks(root, only=None, skip=None):
                             "Handle it in the route (.onError(…) / onErrorResume in the handler, or a "
                             "HandlerFilterFunction), or give the exception @ResponseStatus.",
                             confidence="verify")
+
+
+    # QC25–QC28 — OpenAPI spec vs. code
+    snake_case = bool(re.search(r"property-naming-strategy\s*[:=]\s*['\"]?(SNAKE_CASE|snake_case|"
+                                r"com\.fasterxml\.jackson\.databind\.PropertyNamingStrategies\.SnakeCaseStrategy)",
+                                config_text))
+
+    def enforced(f, src):
+        names = {a[0] for a in f.annotations}
+        if names & {"NotNull", "NotBlank", "NotEmpty"}:
+            return True
+        t = f.type.strip()
+        return src.kotlin and not t.endswith("?") and raw_type(t) not in KOTLIN_PRIMITIVES
+
+    compared = {}
+
+    def fields_by_json(t):
+        return {json_name(f, snake_case): f for f in t.fields if not f.has("JsonIgnore")}
+
+    def compare_schema(spec, op_label, schema, t, side, where_rel, where_line):
+        sch = spec.resolve(schema or {})
+        props = sch.get("properties") or {}
+        if not props or not t or t.kind == "enum":
+            return
+        dto = fields_by_json(t)
+        sname = sch.get("x-name") or "inline schema"
+        pair = (spec.rel, sname, t.name, side)
+        if sch.get("x-name") and pair in compared:
+            compared[pair].append(op_label)
+            return  # same schema and DTO already compared for another operation
+        compared[pair] = [op_label]
+        missing = [p for p in props if p not in dto]
+        if missing:
+            effect = ("clients sending them have them silently ignored" if side == "request"
+                      else "clients expecting them never receive them")
+            rep.add("QC28", "warning", t.src.rel, t.line,
+                    f"{op_label}: the spec's {side} schema {sname} has {', '.join(missing)}, which {t.name} doesn't "
+                    f"have{' (JSON names after snake_case)' if snake_case else ''} — {effect}.",
+                    "Rename the DTO field (or @JsonProperty) to match the spec, or fix the spec.")
+        extra = [n for n in dto if n not in props]
+        if extra:
+            rep.add("QC28", "suggestion", t.src.rel, t.line,
+                    f"{op_label}: {t.name} has {', '.join(extra)}, which the spec's {side} schema {sname} doesn't "
+                    f"document.", "Add them to the spec (or drop them from the DTO).")
+        for name, ps in props.items():
+            f = dto.get(name)
+            if not f:
+                continue
+            want, have = schema_kind(spec.resolve(ps) if "$ref" in (ps or {}) else ps), java_kind(f.type)
+            if want and have and want != have and not (want == "number" and have == "integer"):
+                rep.add("QC28", "warning", t.src.rel, f.line,
+                        f"{op_label}: '{name}' is {want} in the spec but {have} ({f.type}) in {t.name}.",
+                        "Align the type in the spec or the DTO; generated clients rely on it.")
+        if side == "request":
+            required = list(sch.get("required") or [])
+            for r in required:
+                f = dto.get(r)
+                if f and not enforced(f, t.src):
+                    rep.add("QC26", "warning", t.src.rel, f.line,
+                            f"{op_label}: the spec marks '{r}' required, but {t.name}.{f.name} isn't enforced "
+                            f"(no @NotNull/@NotBlank/@NotEmpty), so requests without it are accepted.",
+                            "Add the constraint (and @Valid on the body), or drop it from the spec's required list.")
+            undocumented = [n for n, f in dto.items() if n in props and n not in required and
+                            {a[0] for a in f.annotations} & {"NotNull", "NotBlank", "NotEmpty"}]
+            if undocumented:
+                rep.add("QC26", "suggestion", t.src.rel, t.line,
+                        f"{op_label}: {t.name} requires {', '.join(undocumented)}, but the spec doesn't list "
+                        f"{'it' if len(undocumented) == 1 else 'them'} as required.",
+                        "Add them to the schema's required list so clients know.")
+
+    bases = read_base_paths(root)
+    ctx = ""
+    for key in ("server.servlet.context-path", "spring.webflux.base-path", "spring.mvc.servlet.path"):
+        if bases.get(key):
+            ctx += bases[key][0][0].rstrip("/")
+    functional = []
+    for s in sources:
+        functional += scan_functional(s.path, root)
+
+    for spec, spec_rel, err in openapi_spec.load_specs(root):
+        if err:
+            continue
+        code_eps = [(v, p, h) for h in handlers for v in (h.verbs or ["ANY"]) for p in h.paths]
+        code_eps += [(e["method"], e["path"], None) for e in functional]
+        best = None
+        for cpre in {ctx, ""}:
+            for spre in {spec.base_path, ""}:
+                code_keys = {(v, norm_path(cpre + p)) for v, p, _ in code_eps}
+                hits = sum((m, norm_path(spre + p)) in code_keys or ("ANY", norm_path(spre + p)) in code_keys
+                           for m, p, _, _ in spec.operations())
+                if best is None or hits > best[0]:
+                    best = (hits, cpre, spre)
+        _, cpre, spre = best
+        index = {}
+        for v, p, h in code_eps:
+            index.setdefault((v, norm_path(cpre + p)), h)
+        matched_code = set()
+        for method, path, op, line in spec.operations():
+            key = (method, norm_path(spre + path))
+            if key not in index and ("ANY", key[1]) not in index:
+                rep.add("QC25", "error", spec_rel, line,
+                        f"The spec documents {method} {spre + path}, but no handler serves it — clients built from "
+                        f"the spec get 404/405.", "Implement it, or remove/update it in the spec.")
+                continue
+            h = index.get(key) or index.get(("ANY", key[1]))
+            matched_code.add(key if key in index else ("ANY", key[1]))
+            if h is None:
+                continue  # functional route: no handler model to compare
+            label = f"{method} {spre + path}"
+            want = spec.success_codes(op)
+            have = success_statuses(h)
+            if want and have and not (have & set(want)):
+                rep.add("QC27", "warning", h.src.rel, h.line,
+                        f"{label}: the spec documents {'/'.join(map(str, sorted(set(want))))} but {h.name} returns "
+                        f"{'/'.join(map(str, sorted(have)))}.",
+                        "Return the documented status (e.g. ResponseEntity.created(…) / @ResponseStatus) or fix "
+                        "the spec.", endpoint=h.label())
+            body = next((p for p in h.params if p.anno("RequestBody")), None)
+            if body:
+                for et in element_types(body.type):
+                    u = lookup(et)
+                    if u and not u.is_entity:
+                        compare_schema(spec, label, spec.request_schema(op), u, "request", u.src.rel, u.line)
+            for et in element_types(h.return_type or ""):
+                u = lookup(et)
+                if u and raw_type(et) not in WRAPPER_TYPES:
+                    compare_schema(spec, label, spec.success_schema(op), u, "response", u.src.rel, u.line)
+        undocumented = [(v, p, h) for v, p, h in code_eps if (v, norm_path(cpre + p)) not in matched_code]
+        for v, p, h in undocumented[:15]:
+            rep.add("QC25", "suggestion", h.src.rel if h else spec_rel, h.line if h else 1,
+                    f"{v} {cpre + p} isn't documented in {spec_rel}.", "Document it in the spec (or confirm it's "
+                    "meant to be internal).", endpoint=h.label() if h else None)
+
+    # QC29 — springdoc annotations that contradict the code
+    for h in handlers:
+        documented = {int(c) for c in re.findall(r'@ApiResponse\s*\([^)]*responseCode\s*=\s*"(2\d\d)"', h.annos)}
+        have = success_statuses(h)
+        if documented and have and not (have & documented):
+            rep.add("QC29", "warning", h.src.rel, h.line,
+                    f"{h.name} documents {'/'.join(map(str, sorted(documented)))} with @ApiResponse but returns "
+                    f"{'/'.join(map(str, sorted(have)))}.", "Make the annotation and the returned status agree.",
+                    endpoint=h.label())
+    for t in reachable.values():
+        for f in t.fields:
+            a = f.anno("Schema")
+            if a and re.search(r"requiredMode\s*=\s*(?:Schema\.)?RequiredMode\.REQUIRED|required\s*=\s*true", a[1]) \
+                    and not enforced(f, t.src):
+                rep.add("QC29", "warning", t.src.rel, f.line,
+                        f"{t.name}.{f.name} is documented as required (@Schema) but nothing enforces it, so the "
+                        f"generated docs promise a check the API doesn't make.",
+                        "Add @NotNull/@NotBlank (and @Valid on the body), or drop the required flag.")
 
     # QC16 — not-found handling
     for s in sources:

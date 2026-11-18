@@ -1,0 +1,16 @@
+server:
+  servlet:
+    context-path: /api
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/orders
+  jpa:
+    open-in-view: false
+  mvc:
+    problemdetails:
+      enabled: true
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    url: /openapi.yaml

@@ -1,6 +1,6 @@
 {
   "name": "spring-api-validator",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Validate a Spring Boot REST API: HTTP method semantics, paths, parameter binding, Bean Validation, request/response DTOs, Jackson, status codes, error handling and resource ownership, checked against the project's own API rules.",
   "icon": "assets/icon.png",
   "author": {
@@ -10,6 +10,7 @@
   "repository": "https://github.com/filipelinemburger/spring-boot-api-validator",
   "license": "MIT",
   "keywords": [
+    "openapi",
     "spring",
     "spring-boot",
     "rest",
