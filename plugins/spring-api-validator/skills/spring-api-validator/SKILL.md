@@ -30,15 +30,18 @@ Many rules depend on versions and global settings, and getting them wrong is the
 
 Look for `.api-validator.md` at the repository root (template: `references/project-rules-template.md`), and API conventions in `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md` or `docs/`. Project rules override the generic guidance in this skill: if the team mandates `POST /orders/{id}/cancel`, or a response envelope, don't flag it. When a project rule and a real runtime defect conflict (e.g. a mandated pattern that makes validation never run), report the defect and mention the rule.
 
-### 4. Build the endpoint inventory
+### 4. Build the endpoint inventory and run the quick check
 
-Run the bundled script for a first pass (Python 3, standard library only):
+Run the two bundled scripts first (Python 3, standard library only; each takes about a second):
 
 ```bash
 python3 <skill-dir>/scripts/list_endpoints.py <project-root>
+python3 <skill-dir>/scripts/quick_check.py <project-root>
 ```
 
-It prints every mapping it can find: HTTP method, full path (class + method mapping, plus context path if it finds one), handler and `file:line`. It is regex-based, so treat it as a map, not as truth — confirm each in-scope endpoint by reading the controller, and resolve paths built from constants yourself. Then, for each endpoint in scope, note: parameters (path/query/header/body) with their Java types, the request DTO, the return type, the status it returns, and the service/repository calls it makes.
+`list_endpoints.py` prints every mapping it can find: HTTP method, full path (class + method mapping, plus context path if it finds one), handler and `file:line`. Treat it as a map, not as truth — confirm each in-scope endpoint by reading the controller, and resolve paths built from constants yourself. Then, for each endpoint in scope, note: parameters (path/query/header/body) with their Java types, the request DTO, the return type, the status it returns, and the service/repository calls it makes.
+
+`quick_check.py` flags the mechanical defects that can be matched exactly — missing `@Valid`, non-cascading nested validation, constraints on the wrong type, `required = false` primitives, `@RequestMapping` without a method, path-variable name mismatches, the wrong validation namespace, entities as bodies or responses, request-body primitives, bare `orElseThrow()`, BCrypt limits above 72, the stateless-filter error-dispatch trap and more (`--list-rules`). Use it as a list of leads: open each finding, confirm it, and judge its real severity in context — `[verify]` findings are heuristics (an invariant lookup that can't miss is not a 404 bug). It doesn't follow calls or know intent, so a clean run says nothing about HTTP semantics, ownership, business rules or concurrency; those are still yours to check in step 5. Don't paste its output into the report; fold confirmed findings into your own, one per root cause.
 
 ### 5. Check each endpoint
 

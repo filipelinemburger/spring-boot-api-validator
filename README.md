@@ -49,6 +49,37 @@ You get a Markdown report: the stack it detected, an endpoint inventory (what ea
 
 Add `.api-validator.md` at the repository root to describe your conventions (path prefix, error body, which verbs you use, DTO naming…). They take precedence over the generic defaults. A template ships with the skill: [`project-rules-template.md`](plugins/spring-api-validator/skills/spring-api-validator/references/project-rules-template.md).
 
+## Quick check (no AI, CI-friendly)
+
+The plugin ships a standalone checker the skill runs first, and that you can run on its own — in a terminal or in CI. It needs only Python 3 (standard library), takes about a second on a few hundred files, and flags the defects that can be matched exactly:
+
+| Rule | What it catches |
+|---|---|
+| QC01–QC02 | No validation provider; `javax` vs `jakarta` validation imports for the Boot version |
+| QC03–QC07 | `@RequestBody` without `@Valid`; nested objects/lists that don't cascade; constraints on the wrong type (`@NotBlank` on a `Long`); `@NotNull` on primitives; primitives in request bodies that silently become 0/false |
+| QC08–QC12 | `required = false` primitives (500 when absent); `@RequestMapping` without a method; `@PathVariable` names that don't match the URI template; several request bodies; bodies on GET/DELETE |
+| QC13–QC14 | Action verbs in GET paths (`GET /orders/{id}/cancel`); date parameters without `@DateTimeFormat` |
+| QC15–QC17 | JPA entities as request bodies (mass assignment) or responses; bare `orElseThrow()` giving 500 instead of 404; password limits above BCrypt's 72 bytes |
+| QC18–QC19 | Unhandled errors reaching clients as 401 behind a stateless token filter; Kotlin constraints without `@field:` |
+
+```bash
+python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/quick_check.py <project-root>
+python3 …/quick_check.py <project-root> --json                    # machine-readable
+python3 …/quick_check.py <project-root> --fail-on error --skip QC16  # exit 1 on errors, for CI
+python3 …/quick_check.py --list-rules
+```
+
+Findings marked `[verify]` are heuristics worth a look rather than certain defects. A clean run says nothing about HTTP semantics, ownership or business rules — that's what the skill's full review is for.
+
+In GitHub Actions:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: actions/checkout@v4
+  with: { repository: filipelinemburger/spring-boot-api-validator, path: .spring-api-validator }
+- run: python3 .spring-api-validator/plugins/spring-api-validator/skills/spring-api-validator/scripts/quick_check.py . --fail-on error
+```
+
 ## Using it with other agents
 
 The skill itself is a standard Agent Skill folder — [`plugins/spring-api-validator/skills/spring-api-validator`](plugins/spring-api-validator/skills/spring-api-validator) — so it also works outside the plugin system. For Codex, copy or symlink that folder into `~/.codex/skills/` and call it with `$spring-api-validator`; `agents/openai.yaml` provides its display name there.
@@ -62,6 +93,7 @@ The skill itself is a standard Agent Skill folder — [`plugins/spring-api-valid
   Run them with `claude plugin eval plugins/spring-api-validator --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
 - Validate before publishing: `claude plugin validate . --strict`.
 - `scripts/list_endpoints.py` (standard-library Python 3) prints the endpoint inventory the skill starts from: `python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/list_endpoints.py <project-root>`.
+- `tests/test_quick_check.py` runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet: `python3 -m unittest discover plugins/spring-api-validator/tests`.
 
 ## License
 
