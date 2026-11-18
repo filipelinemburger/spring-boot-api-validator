@@ -42,6 +42,15 @@ COLLECTION_TYPES = {"List", "Set", "Collection", "Iterable", "Map", "SortedSet",
                     "HashSet", "MutableList", "MutableSet", "MutableMap"}
 CONTAINER_TYPES = COLLECTION_TYPES | {"Optional", "Mono", "Flux"}
 PRIMITIVES = {"int", "long", "short", "byte", "double", "float", "boolean", "char"}
+# Kotlin non-null Int/Long/... compile to JVM primitives (a trailing "?" makes them boxed and nullable)
+KOTLIN_PRIMITIVES = {"Int", "Long", "Short", "Byte", "Double", "Float", "Boolean", "Char"}
+
+
+def is_primitive(type_str, kotlin=False):
+    t = type_str.strip()
+    if kotlin:
+        return not t.endswith("?") and raw_type(t) in KOTLIN_PRIMITIVES
+    return raw_type(t) in PRIMITIVES
 NUMERIC_TYPES = {"int", "long", "short", "byte", "double", "float", "Integer", "Long", "Short", "Byte",
                  "Double", "Float", "BigDecimal", "BigInteger", "Int"}
 BOOLEAN_TYPES = {"boolean", "Boolean"}
@@ -54,7 +63,7 @@ WRAPPER_TYPES = {"ResponseEntity", "Optional", "List", "Set", "Collection", "Pag
 ACTION_VERBS = {"delete", "remove", "cancel", "create", "update", "save", "add", "approve", "reject",
                 "activate", "deactivate", "reset", "send", "publish", "accept", "confirm", "withdraw",
                 "promote", "terminate", "submit", "enable", "disable", "assign", "unassign", "execute",
-                "purge"}
+                "purge", "reserve"}
 VERB_PREFIX_RE = re.compile(r"^(get|fetch|list|find|create|add|update|save|delete|remove|set)[A-Z]")
 
 RULES = {
@@ -78,6 +87,10 @@ RULES = {
     "QC18": ("error-dispatch-401", "Unhandled errors likely reach clients as 401 (stateless token filter, /error not permitted)"),
     "QC19": ("kotlin-constraint-target", "Kotlin constraint on a constructor property without @field:"),
     "QC20": ("schema-limits", "Request field allows values longer or larger than the database column it's stored in"),
+    "QC21": ("functional-body-not-validated", "Functional endpoint reads a body whose type has constraints but never validates it"),
+    "QC22": ("blocking-in-reactive", "block() in a WebFlux application"),
+    "QC23": ("empty-means-200", "Handler can return an empty Mono or null, which becomes 200 with no body instead of 404"),
+    "QC24": ("advice-skips-functional-routes", "Exception mapped in @ControllerAdvice is thrown from a functional route the advice doesn't cover (WebFlux on Spring 5, or advice scoped by package/type)"),
 }
 
 
@@ -341,8 +354,9 @@ class Param:
 
 
 class Handler:
-    def __init__(self, src, name, verbs, paths, params, return_type, line):
+    def __init__(self, src, name, verbs, paths, params, return_type, line, body=""):
         self.src = src
+        self.body = body
         self.name = name
         self.verbs = verbs        # [] means "every method"
         self.paths = paths
@@ -383,7 +397,17 @@ def parse_handlers(src):
         params = [Param(f) for f in parse_param_list(src, params_text, sig_m.end())]
         full_paths = [join_paths(cp, p) for cp in class_paths for p in paths]
         verbs = methods or class_methods
-        handlers.append(Handler(src, sig_m.group(1), verbs, full_paths, params, ret, src.line(m.start())))
+        nxt = MAPPING_RE.search(text, pend)
+        limit = nxt.start() if nxt else len(text)
+        brace = text.find("{", pend, limit)
+        eq = re.match(r"[^{]*?=", text[pend:limit]) if src.kotlin else None
+        if eq and (brace == -1 or pend + eq.end() < brace):
+            body = text[pend + eq.end():limit]               # Kotlin expression body
+        elif brace != -1:
+            body = text[brace:matching_brace(text, brace) + 1]
+        else:
+            body = ""
+        handlers.append(Handler(src, sig_m.group(1), verbs, full_paths, params, ret, src.line(m.start()), body))
     return handlers
 
 
@@ -733,13 +757,15 @@ def run_checks(root, only=None, skip=None):
             for kind in ("RequestParam", "RequestHeader", "CookieValue"):
                 a = p.anno(kind)
                 if a and re.search(r"required\s*=\s*false", a[1]) and not re.search(r"defaultValue\s*=", a[1]) \
-                        and raw_type(p.type) in PRIMITIVES:
+                        and is_primitive(p.type, h.src.kotlin):
                     rep.add("QC08", "error", rel, p.line,
                             f"@{kind}(required = false) {p.type} {p.name}: when the {kind[7:].lower() or 'value'} "
                             f"is absent Spring can't put null into a primitive and throws IllegalStateException "
-                            f"(500).", f'Add defaultValue = "…", or use the wrapper type '
-                            f'({"Integer" if raw_type(p.type) == "int" else raw_type(p.type).capitalize()}) '
-                            f'or Optional<…>.', endpoint=ep)
+                            f"(500).",
+                            (f'Add defaultValue = "…", or make it nullable ({raw_type(p.type)}?).' if h.src.kotlin else
+                             f'Add defaultValue = "…", or use the wrapper type '
+                             f'({"Integer" if raw_type(p.type) == "int" else raw_type(p.type).capitalize()}) '
+                             f'or Optional<…>.'), endpoint=ep)
             pv = p.anno("PathVariable")
             if pv is not None:
                 if raw_type(p.type) in ("Map", "MultiValueMap"):
@@ -954,17 +980,113 @@ def run_checks(root, only=None, skip=None):
                         f"Add @Digits(integer = {whole}, fraction = {limit[2]}) or @DecimalMax(\"{biggest}\").",
                         confidence=confidence)
 
+    # Reactive and functional endpoints (WebFlux, WebMvc.fn)
+    webflux = bool(re.search(r"spring-boot-starter-webflux", build_text)) and not re.search(
+        r"spring-boot-starter-web(?![\w-])", build_text)
+    all_src = "\n".join(s.text for s in sources)
+
+    # QC21 — functional endpoints don't run Bean Validation on bodies
+    body_read = re.compile(r"(?:bodyToMono|bodyToFlux|body|awaitBody|awaitBodyOrNull)"
+                           r"(?:\s*\(\s*(\w+)(?:\.class|::class(?:\.java)?)\s*\)|\s*<\s*(\w+)\s*>\s*\(\s*\))")
+    for s in sources:
+        if "ServerRequest" not in s.text:
+            continue
+        validates = re.search(r"\bValidator\b|\.validate\s*\(|SmartValidator|ValidatorFactory", s.text)
+        for m in body_read.finditer(s.text):
+            u = types.get(m.group(1) or m.group(2))
+            if u and not validates and constrained_deep(u):
+                rep.add("QC21", "error", s.rel, s.line(m.start()),
+                        f"This functional handler reads a {u.name} body, which has constraints, but functional "
+                        f"endpoints don't run Bean Validation (there's no @Valid), so they never apply.",
+                        "Inject a jakarta.validation.Validator (or Spring's Validator) and validate the body before "
+                        "using it, turning violations into a 400 (e.g. ServerWebInputException).")
+
+    # QC22 — blocking on the event loop
+    if webflux:
+        for s in sources:
+            if re.search(r"CommandLineRunner|ApplicationRunner|@Scheduled|@SpringBootApplication", s.text):
+                continue
+            web = re.search(r"@(Rest)?Controller\b|ServerRequest", s.text)
+            if not (web or re.search(r"@(Service|Component)\b", s.text)):
+                continue
+            for m in re.finditer(r"\.block(?:First|Last|Optional)?\s*\(|\.toFuture\(\)\s*\.(?:get|join)\(", s.text):
+                rep.add("QC22", "error", s.rel, s.line(m.start()),
+                        "block() in a WebFlux application. On a request (event-loop) thread Reactor refuses it "
+                        "with IllegalStateException (\"block() ... not supported in thread reactor-http-nio\"), so "
+                        "the request fails with 500; elsewhere it stalls a thread the server needs.",
+                        "Stay reactive: replace the block() with flatMap/map on the Mono and return it.",
+                        confidence="certain" if web else "verify")
+
+    # QC23 — "not found" becomes 200 with an empty body
+    for h in handlers:
+        if h.verbs and "GET" not in h.verbs:
+            continue
+        rt = raw_type(h.return_type or "")
+        args = type_args(h.return_type or "")
+        lookup_call = re.search(r"\bfind\w*\(|\bget\w*OrNull\(|OrNull\(", h.body)
+        guarded = re.search(r"switchIfEmpty|defaultIfEmpty|notFound|NotFound|Mono\.error|ResponseStatusException"
+                            r"|orElseThrow|\?:\s*throw|throw\s", h.body)
+        if rt == "Mono" and args and raw_type(args[0]) not in ("ResponseEntity", "ServerResponse", "Void") \
+                and lookup_call and not guarded:
+            rep.add("QC23", "warning", h.src.rel, h.line,
+                    f"{h.name} returns {h.return_type} from a lookup without switchIfEmpty: when nothing is found the "
+                    f"Mono completes empty and WebFlux answers 200 with no body instead of 404.",
+                    "Add .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND))) or map to "
+                    "ResponseEntity with .defaultIfEmpty(ResponseEntity.notFound().build()).",
+                    confidence="verify", endpoint=h.label())
+        elif h.src.kotlin and (h.return_type or "").strip().endswith("?") and lookup_call and not guarded:
+            rep.add("QC23", "warning", h.src.rel, h.line,
+                    f"{h.name} returns a nullable {h.return_type}: when the lookup finds nothing it returns null and "
+                    f"Spring answers 200 with an empty body instead of 404.",
+                    "Return a non-null type and throw a not-found exception (?: throw …), or return ResponseEntity.",
+                    confidence="verify", endpoint=h.label())
+
+    # QC24 — @ControllerAdvice and functional endpoints. Global advice covers functional handlers in WebFlux
+    # since Spring 6.0 and in WebMvc.fn since 5.3; it doesn't on WebFlux 5.x, and scoped advice never does.
+    advised = set()
+    old_webflux = webflux and boot is not None and boot < (3, 0)
+    for s in sources:
+        am = re.search(r"@(?:Rest)?ControllerAdvice\b(\s*\([^)]*\))?", s.text)
+        if not am:
+            continue
+        scoped = bool(am.group(1) and re.search(r"basePackages|basePackageClasses|assignableTypes|annotations|"
+                                                r"\(\s*\"", am.group(1)))
+        if old_webflux or scoped:
+            for m in re.finditer(r"@ExceptionHandler\s*\(([^)]*)\)", s.text):
+                advised |= set(re.findall(r"(\w+)(?:\.class|::class)", m.group(1)))
+    if advised:
+        for s in sources:
+            if "ServerRequest" not in s.text or not re.search(r"ServerResponse", s.text):
+                continue
+            for name in sorted(advised):
+                u = types.get(name)
+                if u and "ResponseStatus" in u.annotations:
+                    continue  # @ResponseStatus on the exception still applies
+                m = re.search(rf"(?:\bnew\s+|\bthrow\s+|\berror\s*\(\s*|\(\s*){name}\s*\(", s.text)
+                if m:
+                    rep.add("QC24", "warning", s.rel, s.line(m.start()),
+                            f"{name} is mapped by an @ExceptionHandler in a @ControllerAdvice, but this functional "
+                            f"handler throws it and that advice doesn't cover functional routes here "
+                            f"({'WebFlux on Spring 5.x' if old_webflux else 'the advice is scoped by package, type or annotation'}). "
+                            f"It reaches the default error handling: 500 instead of the status the advice gives.",
+                            "Handle it in the route (.onError(…) / onErrorResume in the handler, or a "
+                            "HandlerFilterFunction), or give the exception @ResponseStatus.",
+                            confidence="verify")
+
     # QC16 — not-found handling
     for s in sources:
         if not re.search(r"@(Service|Component|RestController|Controller)\b", s.text):
             continue
-        for m in re.finditer(r"\.orElseThrow\(\s*\)|findById\([^()]*\)\s*\.get\(\)", s.text):
+        for m in re.finditer(r"\.orElseThrow\(\s*\)|findById\([^()]*\)\s*\.get\(\)|OrNull\([^()]*\)\s*!!", s.text):
+            exc = "NullPointerException" if m.group(0).endswith("!!") else "NoSuchElementException"
             rep.add("QC16", "warning", s.rel, s.line(m.start()),
-                    "A missing value throws NoSuchElementException, which no handler maps, so the client gets a "
+                    f"A missing value throws {exc}, which no handler maps, so the client gets a "
                     "500 (or whatever /error turns it into). If this can happen for a client-supplied id, it "
                     "should be a 404.",
-                    "Throw a mapped not-found exception, e.g. .orElseThrow(() -> new ResponseStatusException("
-                    "HttpStatus.NOT_FOUND)) or the project's own not-found exception.", confidence="verify")
+                    ("Use ?: throw ResponseStatusException(HttpStatus.NOT_FOUND) (or the project's own not-found "
+                     "exception) instead of !!." if exc == "NullPointerException" else
+                     "Throw a mapped not-found exception, e.g. .orElseThrow(() -> new ResponseStatusException("
+                     "HttpStatus.NOT_FOUND)) or the project's own not-found exception."), confidence="verify")
 
     # QC18 — error dispatch behind a stateless token filter
     sec = [s for s in sources if "SecurityFilterChain" in s.text and

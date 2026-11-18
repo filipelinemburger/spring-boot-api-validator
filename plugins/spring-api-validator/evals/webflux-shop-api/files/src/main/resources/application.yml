@@ -1,0 +1,7 @@
+spring:
+  webflux:
+    base-path: /shop
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/shop
+pricing:
+  base-url: http://pricing.internal:8080

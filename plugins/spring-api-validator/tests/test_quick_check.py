@@ -78,6 +78,57 @@ class QuickCheckTest(unittest.TestCase):
         self.assertNotIn("QC16", rules(skipped))
 
 
+class KotlinAndWebFluxTest(unittest.TestCase):
+    def test_kotlin_books(self):
+        f = check("kotlin-books-api")
+        self.assertEqual(rules(f, "error"), collections.Counter({"QC19": 2, "QC03": 1, "QC08": 1, "QC10": 1}))
+        qc19 = sorted(x["message"].split("property ")[1].split(" ")[0] for x in f if x["rule"] == "QC19")
+        self.assertEqual(qc19, ["CreateBookRequest.isbn", "CreateBookRequest.title"])  # not the @field: ones
+        self.assertIn("Int?", at(f, "QC08", "BookController.kt")[0]["fix"])
+        self.assertIn("NullPointerException", at(f, "QC16", "BookService.kt")[0]["message"])
+        self.assertTrue([x for x in f if x["rule"] == "QC13" and "/reserve" in x["endpoint"]])
+
+    def test_webflux_shop(self):
+        f = check("webflux-shop-api")
+        # No QC24: on Spring 6 (Boot 3.3) global @RestControllerAdvice also handles functional routes.
+        self.assertEqual(set(rules(f)), {"QC21", "QC22", "QC23"})
+        self.assertTrue(at(f, "QC21", "StockHandler.java"))       # bodyToMono without a Validator
+        self.assertTrue(at(f, "QC22", "ProductController.java"))  # block() on the event loop
+        self.assertIn("→ get", at(f, "QC23", "ProductController.java")[0]["endpoint"])  # not /price (switchIfEmpty)
+
+    def test_advice_and_functional_routes_depend_on_version_and_scope(self):
+        import shutil
+        import tempfile
+        src = os.path.join(PLUGIN, "evals", "webflux-shop-api", "files")
+        advice = os.path.join("src", "main", "java", "com", "example", "shop", "common", "ApiExceptionHandler.java")
+        for change, label in ((("pom.xml", "<version>3.3.5</version>", "<version>2.7.18</version>"), "WebFlux on Spring 5"),
+                              ((advice, "@RestControllerAdvice\n",
+                                '@RestControllerAdvice(basePackages = "com.example.shop.product")\n'), "scoped advice")):
+            with tempfile.TemporaryDirectory() as tmp:
+                shutil.copytree(src, tmp, dirs_exist_ok=True)
+                path = os.path.join(tmp, change[0])
+                with open(path) as fh:
+                    text = fh.read()
+                self.assertIn(change[1], text)
+                with open(path, "w") as fh:
+                    fh.write(text.replace(change[1], change[2]))
+                _, f = quick_check.run_checks(tmp, only={"QC24"})
+                self.assertEqual(len(f), 1, label)
+                self.assertIn("NotFoundException", f[0]["message"])
+
+    def test_functional_routes_in_inventory(self):
+        import list_endpoints
+        root = os.path.join(PLUGIN, "evals", "webflux-shop-api", "files")
+        found = []
+        for dirpath, _, filenames in os.walk(root):
+            for fn in filenames:
+                if fn.endswith(".java"):
+                    found += list_endpoints.scan_functional(os.path.join(dirpath, fn), root)
+        self.assertEqual(sorted((e["method"], e["path"], e["handler"]) for e in found),
+                         [("GET", "/api/stock/{sku}", "handler::get"),
+                          ("POST", "/api/stock/{sku}/reservations", "handler::reserve")])
+
+
 class SchemaLimitsTest(unittest.TestCase):
     """QC20: request limits vs. database columns."""
 

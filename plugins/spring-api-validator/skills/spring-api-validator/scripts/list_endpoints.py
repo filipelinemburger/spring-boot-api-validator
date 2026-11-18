@@ -257,6 +257,47 @@ def scan_file(path, root):
     return endpoints
 
 
+ROUTE_RE = re.compile(
+    r"(?:\.|\b)(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*\(\s*\"([^\"]*)\"\s*(?:,\s*([^,()]+?(?:::|\.)\s*\w+|\{))?")
+
+
+def scan_functional(path, root):
+    """Functional endpoints: RouterFunctions.route().GET("/x", handler::m) and route(GET("/x"), handler::m),
+    WebFlux and WebMvc.fn alike. Nested prefixes (.path / .nest / nest(path(...))) are flagged, not resolved."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            raw = fh.read()
+    except OSError:
+        return []
+    if not re.search(r"\bRouterFunction|coRouter|\brouter\s*\{", raw):
+        return []
+    src = strip_comments(raw)
+    nested = bool(re.search(r"\.path\s*\(\s*\"|\.nest\s*\(|\bnest\s*\(|\"[^\"]*\"\s*\.nest\s*\{", src))
+    endpoints = []
+    matches = list(ROUTE_RE.finditer(src))
+    for k, m in enumerate(matches):
+        verb, p = m.group(1), m.group(2)
+        if not p.startswith("/") and p != "":
+            continue  # e.g. a header or media type string, not a path
+        handler = (m.group(3) or "").strip()
+        nxt = matches[k + 1].start() if k + 1 < len(matches) else len(src)
+        tail = src[m.end():min(nxt, m.end() + 200)]
+        if not handler or handler == "{":
+            # route(GET("/x").and(accept(JSON)), handler::m) — the handler follows the predicate
+            hm = re.search(r",\s*([\w.]+::\w+)", tail)
+            handler = hm.group(1) if hm else "(lambda)"
+        handler = re.sub(r"\s+", "", handler).replace("this::", "")
+        flags = ["functional route"] + (["nested prefix not resolved — check .path/.nest"] if nested else [])
+        endpoints.append({
+            "method": verb,
+            "path": p or "/",
+            "handler": handler,
+            "location": "%s:%d" % (os.path.relpath(path, root), src.count("\n", 0, m.start()) + 1),
+            "flags": flags,
+        })
+    return endpoints
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     as_json = "--json" in sys.argv
@@ -269,6 +310,7 @@ def main():
         for fn in filenames:
             if fn.endswith((".java", ".kt")):
                 endpoints.extend(scan_file(os.path.join(dirpath, fn), root))
+                endpoints.extend(scan_functional(os.path.join(dirpath, fn), root))
     endpoints.sort(key=lambda e: (e["path"], e["method"]))
     bases = read_base_paths(root)
 

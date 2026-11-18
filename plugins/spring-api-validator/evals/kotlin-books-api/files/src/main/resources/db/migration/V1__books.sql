@@ -1,0 +1,10 @@
+CREATE TABLE books (
+    id BIGSERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    subtitle VARCHAR(200),
+    author VARCHAR(120) NOT NULL,
+    isbn VARCHAR(13) NOT NULL UNIQUE,
+    pages INT NOT NULL,
+    stock INT NOT NULL DEFAULT 0,
+    reserved INT NOT NULL DEFAULT 0
+);

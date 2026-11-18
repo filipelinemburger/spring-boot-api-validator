@@ -76,6 +76,7 @@ The plugin ships a standalone checker the skill runs first, and that you can run
 | QC15–QC17 | JPA entities as request bodies (mass assignment) or responses; bare `orElseThrow()` giving 500 instead of 404; password limits above BCrypt's 72 bytes |
 | QC18–QC19 | Unhandled errors reaching clients as 401 behind a stateless token filter; Kotlin constraints without `@field:` |
 | QC20 | Request fields that allow longer strings or larger numbers than the database column they end up in — limits read from Flyway/SQL migrations (in order, including later `ALTER`/`RENAME`), Liquibase XML and `@Column`, including money copied into a narrower column elsewhere |
+| QC21–QC24 | WebFlux and functional endpoints: functional handlers that read a constrained body without validating it; `block()` in a WebFlux app; lookups that return an empty `Mono` (or a Kotlin `null`) as 200 instead of 404; exceptions mapped in `@ControllerAdvice` but thrown from functional routes the advice doesn't cover (WebFlux on Spring 5, or advice scoped by package/type) |
 
 ```bash
 python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/quick_check.py <project-root>

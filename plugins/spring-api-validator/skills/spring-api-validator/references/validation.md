@@ -48,7 +48,14 @@ Validation bugs are usually silent: the annotations are there, the code compiles
 ## Kotlin
 
 - Annotations on constructor properties apply to the constructor parameter by default, which Bean Validation ignores. Use the field target: `data class Req(@field:NotBlank val name: String)`. `@NotBlank val name: String` without `@field:` is silently ignored (Error).
-- Non-nullable Kotlin types (`val qty: Int`) make Jackson (with jackson-module-kotlin) reject missing/null values with a 400 before validation runs — fine, but the error message comes from Jackson, not from validation; check the error body is still in the API's format.
+- Non-nullable Kotlin object types (`val name: String`, `val address: Address`) make jackson-module-kotlin reject a missing or null value with a 400 (`MissingKotlinParameterException`) before validation runs — fine, but the message comes from Jackson, not from validation; check the error body is still in the API's format. Non-null *value* types (`Int`, `Long`, `Boolean` without a default) compile to JVM primitives, and a missing one is filled with 0/false like a Java primitive unless `FAIL_ON_NULL_FOR_PRIMITIVES` (or `FAIL_ON_MISSING_CREATOR_PROPERTIES`) is enabled — treat them like Java primitives and confirm with a `@JsonTest` when it matters.
+- The same JVM-primitive rule applies to parameters: `@RequestParam(required = false) page: Int` fails with 500 when absent; use `page: Int?` or `defaultValue`.
+- `!!` on a lookup (`repo.findByIdOrNull(id)!!`) turns "not found" into a `NullPointerException` (500); use `?: throw ResponseStatusException(NOT_FOUND)`.
+- A handler returning a nullable type (`fun get(): BookResponse?`) answers 200 with an empty body when it returns null — not 404.
+
+## Functional endpoints (WebFlux `RouterFunction`, WebMvc.fn)
+
+Bean Validation runs only for annotated handler parameters (`@Valid @RequestBody`). A functional handler that reads `request.bodyToMono(X.class)` / `request.body(X.class)` / `awaitBody<X>()` gets **no validation at all**, whatever constraints `X` declares — it has to call a `Validator` itself and turn violations into a 400. Flag every functional body read of a constrained type with no validator call (Error), and spell out what the unchecked values do downstream.
 
 ## Records
 

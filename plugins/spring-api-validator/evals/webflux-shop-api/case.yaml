@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: webflux-shop-api
+expected_outcome: |
+  api-review.md finds the reactive and functional-endpoint defects: an empty Mono from GET /api/products/{id} becomes 200 with no body; block() inside the /price handler fails on the event loop; the functional reservations endpoint never validates its body (so a negative quantity lowers the reserved count); and it doesn't wrongly claim the @RestControllerAdvice skips the functional routes (on Spring 6 global advice covers them). It inventories the functional routes under the /shop base path and leaves the correct annotated validation and the /price switchIfEmpty alone.
+context:
+  scaffold_script: place-files.sh
