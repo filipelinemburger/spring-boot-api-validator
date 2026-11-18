@@ -2,6 +2,14 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
+## 0.8.0 — 2026-11-18
+### Added
+- **Directory edition** for the Claude plugin directory, which accepts no bundled scripts from unverified organizations: `tools/build_directory_edition.py` builds the plugin without `scripts/`, with its own README (`directory/README.md`) and a description that doesn't claim the checker, and checks every file against the directory's rules (allowed types, no `#!`, UTF-8, valid JSON, size). CI rebuilds it on every push to `main` and publishes it to the `directory` branch, which the directory tracks.
+- Unit tests for the build (`tests/test_directory_edition.py`).
+### Changed
+- The skill and the `/validate-api` command work without `scripts/`: they then build the endpoint inventory by searching for mappings and functional routes, and do the quick check's mechanical checks (and the OpenAPI comparisons) by reading the code. With `scripts/` present — the marketplace install, Codex, the GitHub Action — nothing changes.
+- Measured on three test apps (order service, WebFlux shop, OpenAPI drift): the script-free edition scored 38/38, the same as the full edition, at about the same cost (92k tokens, 161 s on average vs 92k, 158 s); without the skill, 34/38.
+
 ## 0.7.2 — 2026-11-18
 ### Changed
 - The plugin folder now ships only what the plugin uses — skills, references, the three `#!` Python scripts, the README, LICENSE and the PNG icon — as the Claude plugin directory requires. The test apps moved to `evals/`, the unit tests to `tests/` and the icon's SVG source to `branding/`, all at the repository root (run the evals with `--eval-dir evals`).

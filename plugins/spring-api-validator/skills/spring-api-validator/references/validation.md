@@ -36,7 +36,7 @@ Validation bugs are usually silent: the annotations are there, the code compiles
 - `@Positive`/`@PositiveOrZero`/`@DecimalMin` on `BigDecimal` money fields; `@Digits(integer, fraction)` for scale. Money without any bound is a suggestion.
 - `@Past`/`@Future` on date fields where the domain implies it (birth date, scheduled date).
 - **Passwords hashed with BCrypt**: BCrypt only uses 72 bytes, and since Spring Security 6.4.4 `BCryptPasswordEncoder` throws `IllegalArgumentException` for longer input. `@Size(max = 100)` on a password therefore lets 73–100-character passwords (fewer with non-ASCII characters) reach a 500. Cap at 72 bytes.
-- **Numbers vs `NUMERIC(p,s)` columns** (quick check rule QC20 lists the candidates): amounts without `@DecimalMax`/`@Digits` overflow the column at flush. Check the *narrowest* column the value ends up in — a value accepted into a wide staging column (an offer, an agreement) and later copied into a narrower one (the player's wage) fails at that later step, possibly in a batch job such as a season rollover, every time it runs.
+- **Numbers vs `NUMERIC(p,s)` columns** (quick-check rule QC20 lists the candidates when `scripts/` is present): amounts without `@DecimalMax`/`@Digits` overflow the column at flush. Check the *narrowest* column the value ends up in — a value accepted into a wide staging column (an offer, an agreement) and later copied into a narrower one (the player's wage) fails at that later step, possibly in a batch job such as a season rollover, every time it runs.
 - `@Size(max = …)` on strings that map to bounded DB columns (`@Column(length = 100)`) — missing bounds turn oversize input into a 500 from the database instead of a 400.
 
 ## Create vs update

@@ -2,8 +2,8 @@
 
 Read when the project publishes a spec (an `openapi*.yaml`/`json`, `swagger*.json`, or any YAML/JSON whose first key is `openapi:`/`swagger:`) or documents its API with springdoc annotations (`@Operation`, `@ApiResponse`, `@Schema`). Clients — front-ends, mobile apps, generated SDKs — are built from that contract, so a drift between it and the code breaks them even when the code is internally fine.
 
-## What the quick check already compares (QC25–QC29)
-`scripts/openapi_spec.py <root>` lists the operations it reads; `quick_check.py` matches them to handlers (path-variable names and base paths normalised: spec `servers[0].url` / Swagger `basePath` vs `server.servlet.context-path`):
+## The mechanical comparisons (quick-check rules QC25–QC29 when `scripts/` is present)
+With `scripts/`, `openapi_spec.py <root>` lists the operations it reads and `quick_check.py` matches them to handlers. Without it, do the same by hand: list the spec's `paths` × methods and match each to a handler, normalising path-variable names and base paths (spec `servers[0].url` / Swagger `basePath` vs `server.servlet.context-path`):
 - **QC25** documented operation with no handler → Error (clients get 404/405); handler not in the spec → Suggestion.
 - **QC27** documented 2xx status ≠ what the handler returns (`ResponseEntity.ok` vs a documented 201) → Warning.
 - **QC26** field in the request schema's `required` list not enforced by the DTO (no `@NotNull`/`@NotBlank`/`@NotEmpty`, or a Java primitive) → Warning; enforced but undocumented → Suggestion.

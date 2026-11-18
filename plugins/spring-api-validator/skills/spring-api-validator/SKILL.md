@@ -9,18 +9,20 @@ Find real defects in a Spring REST API — things that silently don't work (vali
 
 ## Workflow
 
-1. **Scope.** The whole API, a controller, an endpoint, or a change (branch vs base; `quick_check.py --diff-base <base>` limits the quick check to changed files). For a change, review affected endpoints fully and look at the rest only for consistency. (`/spring-api-validator:validate-api` settles scope and output, then hands over here.)
+1. **Scope.** The whole API, a controller, an endpoint, or a change (branch vs base: `git diff --name-only $(git merge-base <base> HEAD)` plus untracked files). For a change, review affected endpoints fully and look at the rest only for consistency. (`/spring-api-validator:validate-api` settles scope and output, then hands over here.)
 
 2. **Stack and config, before judging anything.** From the build file: Spring Boot version, MVC vs WebFlux, Java/Kotlin, validation starter, Boot parent or Gradle plugin (`-parameters`), Lombok, Spring Data. Validation namespace (`javax` on Boot 2, `jakarta` on 3+). Global config: context/base path, `spring.jackson.*`, `spring.mvc.problemdetails.enabled`, `open-in-view`, path prefixes. Existing conventions: advice classes, error body, response envelope, path style — consistency with the codebase beats generic advice.
 
 3. **Project rules.** `.api-validator.md` at the repo root (template: `references/project-rules-template.md`), or API conventions in `CLAUDE.md`/`AGENTS.md`/`CONTRIBUTING.md`/`docs/`. They override the generic guidance; when one conflicts with a real runtime defect, report the defect and mention the rule.
 
-4. **Inventory and quick check** (Python 3, standard library, about a second each):
+4. **Inventory and quick check.** If this skill's folder has a `scripts/` directory (Python 3, standard library, about a second each):
    ```bash
    python3 <skill-dir>/scripts/list_endpoints.py <project-root>
-   python3 <skill-dir>/scripts/quick_check.py <project-root>
+   python3 <skill-dir>/scripts/quick_check.py <project-root>    # add --diff-base <base> for a change
    ```
    The inventory lists annotated and functional endpoints with `file:line`; confirm each in-scope one and resolve constants or nested prefixes yourself. The quick check flags mechanical defects (`--list-rules`); treat them as leads to confirm, judge severity in context (`[verify]` = heuristic), and fold confirmed ones into your findings. A clean quick check says nothing about HTTP semantics, ownership, business rules or concurrency.
+
+   Without `scripts/` (some editions ship without them), build the inventory by searching the sources: `@(Get|Post|Put|Patch|Delete|Request)Mapping` with the class-level prefix, `RouterFunction`/`route()`/`coRouter {` builders and their nested `path(...)`/`nest(...)` prefixes, plus `server.servlet.context-path`/`spring.webflux.base-path`. Then do the mechanical checks yourself as part of step 5 — every one is a checklist line: `@Valid` on bodies and nested types, constraint/type mismatches, primitives (`@NotNull` on them, `required = false`, in bodies), mappings without a method, path-variable names, `javax` vs `jakarta`, entities as bodies, bare `orElseThrow()`, BCrypt limits, `@field:` in Kotlin, request limits vs migration/`@Column` sizes, `block()` in WebFlux, and — when there's a spec — each documented operation, status, required field and property name against the code.
 
 5. **Check each endpoint.** Read `references/checklist.md` — every rule in one line with its runtime effect and default severity — plus `references/kotlin.md` for Kotlin sources, `references/webflux.md` for WebFlux or functional routes, and `references/openapi.md` when the project publishes an OpenAPI/Swagger spec or uses springdoc annotations (then the spec is part of what the API claims: compare it with the code, endpoint by endpoint). Open the detail files the checklist points to (`http-methods.md`, `parameters.md`, `validation.md`, `dto-serialization.md`, `responses-errors.md`, `structure.md`, `versions.md`) only to settle a specific finding — when you're unsure of the runtime behaviour, the severity or the fix. A small scope means fewer endpoints, not a shallower check.
 

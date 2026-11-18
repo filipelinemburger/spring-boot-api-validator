@@ -33,6 +33,8 @@ claude plugin install spring-api-validator@spring-tools
 
 Update later with `/plugin marketplace update spring-tools` (or turn on auto-update for the marketplace in `/plugin`).
 
+**Claude plugin directory edition.** The Claude plugin directory doesn't accept bundled scripts from unverified publishers, so the directory lists an edition without the quick-check scripts, built from this repository's `directory` branch. It runs the same review — doing the mechanical checks by reading the code instead — and has the same `/validate-api` command; the standalone checker and the GitHub Action stay here. Install from this marketplace if you want the checker inside the plugin.
+
 ## Use
 
 Open a Spring Boot project and ask in plain words — the skill loads on its own:
@@ -124,8 +126,9 @@ The skill itself is a standard Agent Skill folder — [`plugins/spring-api-valid
   They live outside the plugin folder, so they aren't shipped to users. Run them with `claude plugin eval plugins/spring-api-validator --eval-dir evals --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
 - Validate before publishing: `claude plugin validate . --strict`.
 - `scripts/list_endpoints.py` (standard-library Python 3) prints the endpoint inventory the skill starts from: `python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/list_endpoints.py <project-root>`.
-- `.github/workflows/ci.yml` runs the unit tests, validates the plugin and marketplace, and runs this repository's own action on an eval app to check its outputs and failure behaviour.
-- `tests/test_quick_check.py` (repository root) runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet: `python3 -m unittest discover tests`.
+- `.github/workflows/ci.yml` runs the unit tests, validates the plugin and marketplace, and runs this repository's own action on an eval app to check its outputs and failure behaviour. On pushes to `main` it also rebuilds the directory edition and publishes it to the `directory` branch.
+- The directory edition: `python3 tools/build_directory_edition.py --out <dir>` builds it (the plugin without `scripts/`, the README from `directory/README.md`, a description without the checker) and checks every file against the directory's rules. Don't edit the `directory` branch by hand.
+- `tests/test_quick_check.py` (repository root) runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet; `tests/test_directory_edition.py` checks the directory build. Run both with `python3 -m unittest discover tests`.
 
 ## License
 

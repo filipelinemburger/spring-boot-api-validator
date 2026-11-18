@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # validate-api
 
-A thin entry point with arguments. The review itself is done by the main skill of this plugin, which lives next to this one: `../spring-api-validator/SKILL.md` relative to this skill's base directory. Read that file now and follow its workflow; its `references/` and `scripts/` paths are relative to its own folder.
+A thin entry point with arguments. The review itself is done by the main skill of this plugin, which lives next to this one: `../spring-api-validator/SKILL.md` relative to this skill's base directory. Read that file now and follow its workflow; its `references/` and `scripts/` paths are relative to its own folder (`scripts/` may be absent; the main skill says what to do then).
 
 Arguments: `$ARGUMENTS`
 
@@ -29,8 +29,8 @@ If something is ambiguous (two controllers match), pick the most likely one and 
 With `--diff`:
 
 1. `git merge-base <base> HEAD`, then `git diff --name-only <merge-base>` plus untracked files (`git ls-files --others --exclude-standard`) give the changed files.
-2. In scope: every endpoint whose controller changed, plus every endpoint that reads or returns a changed DTO, calls a changed service/repository method, or is affected by a changed advice, security config, Jackson/MVC config or `application*.yml`. Use `scripts/list_endpoints.py` and a search for the changed types to find them.
-3. Run the quick check limited to the diff: `python3 <main-skill-dir>/scripts/quick_check.py <project-root> --diff-base <base>`. Its findings are leads; confirm each.
+2. In scope: every endpoint whose controller changed, plus every endpoint that reads or returns a changed DTO, calls a changed service/repository method, or is affected by a changed advice, security config, Jackson/MVC config or `application*.yml`. Use the main skill's inventory step and a search for the changed types to find them.
+3. If the main skill has a `scripts/` folder, run the quick check limited to the diff: `python3 <main-skill-dir>/scripts/quick_check.py <project-root> --diff-base <base>`; its findings are leads, confirm each. Without it, do the mechanical checks by hand on the changed files, as the main skill's step 4 describes.
 4. Review the endpoints in scope with the full workflow — the main skill's checklist (plus `kotlin.md`/`webflux.md` when they apply), opening detail files to settle specific findings. A diff is a smaller scope, not a lighter check. Look at the rest of the API only to judge consistency (a new endpoint that breaks an existing convention).
 5. For every new or changed write endpoint, write down which authorization check it performs (e.g. `requireOwned` + `requireInSave`) and which check the existing write endpoints on the same kind of resource perform (e.g. `requireManagedClub`). A new endpoint with a weaker check than its siblings is an Error even when the code compiles and the save-level ownership is right. New endpoints are where these gaps appear.
 
