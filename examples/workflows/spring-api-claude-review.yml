@@ -44,7 +44,7 @@ jobs:
       issues: read
       id-token: write      # required by the Claude GitHub App authentication
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # the review compares the PR with its base branch
 

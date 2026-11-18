@@ -92,7 +92,7 @@ Two ready-made workflows in [`examples/workflows/`](examples/workflows) — copy
 **Quick check on every PR** — free, no API key, about a second ([`spring-api-quick-check.yml`](examples/workflows/spring-api-quick-check.yml)). This repository is itself a GitHub Action:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v5
   with: { fetch-depth: 0 }
 - uses: filipelinemburger/spring-boot-api-validator@v0
   with:
