@@ -6,14 +6,7 @@
 - **`ResponseEntity<T>`**: use when status or headers vary (201 + `Location`, 404 vs 200, 204). Check the statuses it builds against `http-methods.md` §5.
 - **`return null`** from a handler → 200 with an empty body. For "not found" this lies to the client. Warning/Error depending on whether it's the not-found path.
 - **`Optional<T>` return type** → `Optional.empty()` serializes as `null` with 200 (it is not turned into 404). Use `ResponseEntity.of(optional)` (404 when empty) or throw a not-found exception.
-- **WebFlux**: `Mono.empty()` → 200 empty body, not 404. Use `switchIfEmpty(Mono.error(new ResponseStatusException(NOT_FOUND)))`.
-- **Functional endpoints and `@ControllerAdvice`** — version-dependent, so check before claiming either way:
-  - **WebFlux, Spring Framework 6.0+ (Boot 3+)**: `DispatcherHandler` passes errors from *every* handler, functional ones included, to `RequestMappingHandlerAdapter.handleError`, so **global** `@ControllerAdvice` exception handlers do apply to `RouterFunction` handlers. Advice scoped with `basePackages`/`assignableTypes`/`annotations` does not (there is no controller type to match).
-  - **WebFlux, Spring 5.x (Boot 2.x)**: `@ControllerAdvice` covers annotated controllers only; an exception from a functional handler goes to the default error handling — usually 500.
-  - **Spring MVC functional (WebMvc.fn)**: global advice applies since 5.3; scoped advice doesn't.
-  - Where the advice doesn't apply, the exception needs `@ResponseStatus`/`ResponseStatusException`, or handling in the route (`onErrorResume`, `.onError(…)` on the router builder, a `HandlerFilterFunction`).
-- **`void` handlers** → 200 with empty body; for DELETE/actions use `@ResponseStatus(HttpStatus.NO_CONTENT)` or `ResponseEntity.noContent().build()`.
-- `ResponseEntity<?>`/`ResponseEntity<Object>` returning different body types per branch (DTO on success, `String` or `Map` on error) — untyped contract, inconsistent errors. Warning.
+- **WebFlux**: empty `Mono` and `@ControllerAdvice` coverage of functional routes — see `webflux.md`.
 
 ## Exceptions that become 500s
 

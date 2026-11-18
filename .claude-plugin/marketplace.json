@@ -9,7 +9,7 @@
       "name": "spring-api-validator",
       "source": "./plugins/spring-api-validator",
       "description": "Validate a Spring Boot REST API: verbs, paths, binding, validation, DTOs, errors and ownership — locally, per branch, or as a PR review.",
-      "version": "0.5.0"
+      "version": "0.6.0"
     }
   ]
 }
