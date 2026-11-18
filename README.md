@@ -43,6 +43,20 @@ Open a Spring Boot project and ask in plain words — the skill loads on its own
 
 Or call it explicitly: `/spring-api-validator:spring-api-validator [scope]`.
 
+### The `validate-api` command
+
+For a fixed scope, or to review a branch before you open a PR:
+
+```
+/spring-api-validator:validate-api                         # the whole API
+/spring-api-validator:validate-api OrderController         # one controller (or "POST /orders", a package, a path)
+/spring-api-validator:validate-api --diff                  # only what this branch changes vs. the default branch
+/spring-api-validator:validate-api --diff origin/develop --errors-only --out api-review.md
+/spring-api-validator:validate-api --comment acme/shop/pull/42   # review that PR and post the findings on it
+```
+
+In `--diff` mode it reviews every endpoint the change affects — changed controllers, and endpoints that use a changed DTO, service, advice or config — marks pre-existing problems as such, and keeps them out of the counts.
+
 You get a Markdown report: the stack it detected, an endpoint inventory (what each handler really does), findings grouped as **Errors / Warnings / Suggestions** with `file:line`, runtime consequence, fix and confidence, and a "Looks good" list. It only changes code if you ask it to fix the findings, and only runs the app if you ask for a runtime check (local or test instances only).
 
 ### Your team's rules
@@ -69,16 +83,27 @@ python3 …/quick_check.py <project-root> --fail-on error --skip QC16  # exit 1 
 python3 …/quick_check.py --list-rules
 ```
 
-Findings marked `[verify]` are heuristics worth a look rather than certain defects. A clean run says nothing about HTTP semantics, ownership or business rules — that's what the skill's full review is for.
+Findings marked `[verify]` are heuristics worth a look rather than certain defects. A clean run says nothing about HTTP semantics, ownership or business rules — that's what the skill's full review is for. Other options: `--diff-base origin/main` (only files changed since the branch left `main`), `--format github` (Actions annotations) and `--format markdown` (a summary table).
 
-In GitHub Actions:
+## GitHub Actions
+
+Two ready-made workflows in [`examples/workflows/`](examples/workflows) — copy either or both into `.github/workflows/` of your Spring Boot repository.
+
+**Quick check on every PR** — free, no API key, about a second ([`spring-api-quick-check.yml`](examples/workflows/spring-api-quick-check.yml)). This repository is itself a GitHub Action:
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: actions/checkout@v4
-  with: { repository: filipelinemburger/spring-boot-api-validator, path: .spring-api-validator }
-- run: python3 .spring-api-validator/plugins/spring-api-validator/skills/spring-api-validator/scripts/quick_check.py . --fail-on error
+  with: { fetch-depth: 0 }
+- uses: filipelinemburger/spring-boot-api-validator@v0
+  with:
+    path: .          # folder with pom.xml / build.gradle
+    fail-on: error   # error | warning | suggestion | never
+    skip: QC16       # optional
 ```
+
+It checks only the files the PR changes, shows each finding as an annotation on the changed line, writes a table to the job summary, exposes `errors` / `warnings` outputs, and fails the job at the severity you choose.
+
+**Full review by Claude on every PR** ([`spring-api-claude-review.yml`](examples/workflows/spring-api-claude-review.yml)). Uses the official [Claude Code GitHub Action](https://github.com/anthropics/claude-code-action) to install this plugin and run `/spring-api-validator:validate-api --diff … --comment …`: Errors and Warnings become inline review comments on the changed lines, plus one summary comment. It only reports — never approves, pushes or edits. Needs the Claude GitHub App and an `ANTHROPIC_API_KEY` secret, costs one model review per run, and is skipped for drafts and fork PRs (which don't get secrets).
 
 ## Using it with other agents
 
@@ -93,6 +118,7 @@ The skill itself is a standard Agent Skill folder — [`plugins/spring-api-valid
   Run them with `claude plugin eval plugins/spring-api-validator --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
 - Validate before publishing: `claude plugin validate . --strict`.
 - `scripts/list_endpoints.py` (standard-library Python 3) prints the endpoint inventory the skill starts from: `python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/list_endpoints.py <project-root>`.
+- `.github/workflows/ci.yml` runs the unit tests, validates the plugin and marketplace, and runs this repository's own action on an eval app to check its outputs and failure behaviour.
 - `tests/test_quick_check.py` runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet: `python3 -m unittest discover plugins/spring-api-validator/tests`.
 
 ## License

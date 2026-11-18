@@ -78,5 +78,34 @@ class QuickCheckTest(unittest.TestCase):
         self.assertNotIn("QC16", rules(skipped))
 
 
+class DiffScopeTest(unittest.TestCase):
+    """--diff-base reports only findings in files the branch changed."""
+
+    def test_only_changed_files_are_reported(self):
+        import shutil
+        import subprocess
+        import tempfile
+        script = os.path.join(PLUGIN, "skills", "spring-api-validator", "scripts", "quick_check.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            shutil.copytree(os.path.join(PLUGIN, "evals", "full-audit-order-service", "files"), tmp, dirs_exist_ok=True)
+            git = ["git", "-C", tmp, "-c", "user.name=t", "-c", "user.email=t@example.com"]
+            subprocess.run(git + ["init", "-q", "-b", "main"], check=True)
+            subprocess.run(git + ["add", "-A"], check=True)
+            subprocess.run(git + ["commit", "-qm", "base"], check=True)
+            subprocess.run(git + ["checkout", "-qb", "feature"], check=True)
+            new = os.path.join(tmp, "src/main/java/com/acme/orders/dto/NoteRequest.java")
+            with open(new, "w") as fh:
+                fh.write("package com.acme.orders.dto;\n\nimport jakarta.validation.constraints.NotBlank;\n\n"
+                         "public record NoteRequest(@NotBlank Long orderId) {}\n")
+            out = subprocess.run([sys.executable, script, tmp, "--diff-base", "main", "--format", "json"],
+                                 capture_output=True, text=True, check=True)
+            import json
+            findings = json.loads(out.stdout)["findings"]
+            self.assertEqual([(f["rule"], os.path.basename(f["file"])) for f in findings],
+                             [("QC05", "NoteRequest.java")])
+            bad = subprocess.run([sys.executable, script, tmp, "--diff-base", "no-such-ref"], capture_output=True)
+            self.assertEqual(bad.returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

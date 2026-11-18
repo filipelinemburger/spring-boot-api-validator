@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Quick checker unit tests
+        run: python3 -m unittest discover plugins/spring-api-validator/tests -v
+
+      - name: Validate plugin and marketplace
+        run: |
+          npm install --global --silent @anthropic-ai/claude-code
+          claude plugin validate . --strict
+          claude plugin validate ./plugins/spring-api-validator --profile directory
+
+      # The repository is also a GitHub Action: run it on an eval app and check what it reports.
+      - name: Run the action on the order-service eval app
+        id: action
+        uses: ./
+        with:
+          path: plugins/spring-api-validator/evals/full-audit-order-service/files
+          fail-on: never
+          changed-only: "false"
+
+      - name: Check the action's outputs
+        env:
+          ERRORS: ${{ steps.action.outputs.errors }}
+        run: |
+          echo "errors=$ERRORS"
+          test "$ERRORS" = "7"
+
+      - name: The action fails the job on errors when asked to
+        id: failing
+        continue-on-error: true
+        uses: ./
+        with:
+          path: plugins/spring-api-validator/evals/full-audit-order-service/files
+          fail-on: error
+          changed-only: "false"
+
+      - name: Check it failed
+        env:
+          OUTCOME: ${{ steps.failing.outcome }}
+        run: test "$OUTCOME" = "failure"

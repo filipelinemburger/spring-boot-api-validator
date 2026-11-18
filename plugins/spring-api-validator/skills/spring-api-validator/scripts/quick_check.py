@@ -12,7 +12,11 @@ It is a first pass, not a verdict: the patterns are exact for what they match, b
 calls into services or know the team's intent. The skill (or a reviewer) confirms each finding in the
 code. Rules marked "verify" are heuristics that point at something worth a look.
 
-Exit status: 0 unless --fail-on is set and a finding at or above that severity exists (then 1).
+Options: --format text|json|github|markdown, --diff-base REF (only files changed since the branch left
+REF), --fail-on SEVERITY, --rules/--skip IDS, --list-rules.
+
+Exit status: 0; 1 when --fail-on is set and a reported finding is at or above that severity; 2 when the
+--diff-base comparison can't be computed (e.g. a shallow clone without the base commit).
 """
 import argparse
 import json
@@ -767,12 +771,107 @@ def run_checks(root, only=None, skip=None):
     return stack, rep.findings
 
 
+def git(root, *args):
+    import subprocess
+    out = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip() or f"git {' '.join(args)} failed")
+    return out.stdout
+
+
+def changed_files(root, base):
+    """Files (root-relative) changed since `base` diverged — committed on this branch or not yet committed."""
+    # realpath on both sides: git reports resolved paths (/private/var/… on macOS, symlinked workspaces in CI)
+    root = os.path.realpath(root)
+    top = os.path.realpath(git(root, "rev-parse", "--show-toplevel").strip())
+    merge_base = git(root, "merge-base", base, "HEAD").strip()
+    names = git(root, "diff", "--name-only", "--diff-filter=ACMR", merge_base).split()
+    names += git(top, "ls-files", "--others", "--exclude-standard", "--full-name").split()  # new, untracked
+    return {os.path.relpath(os.path.join(top, n), root) for n in names}
+
+
+def repo_relative(root, rel):
+    """Path as GitHub sees it (relative to the repository root) for annotations."""
+    try:
+        top = os.path.realpath(git(root, "rev-parse", "--show-toplevel").strip())
+        return os.path.relpath(os.path.join(os.path.realpath(root), rel), top)
+    except (RuntimeError, OSError):
+        return rel
+
+
+def gh_escape(s, prop=False):
+    s = s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return s.replace(":", "%3A").replace(",", "%2C") if prop else s
+
+
+def print_text(root, stack, findings, scope):
+    boot = stack["spring_boot"] or "unknown"
+    print(f"Spring API quick check — {root}")
+    print(f"Spring Boot {boot} · validation: {stack['validation_namespace'] or 'none'} · "
+          f"{stack['handlers']} handlers · {stack['types']} types{scope}\n")
+    for sev in SEVERITIES:
+        group = [f for f in findings if f["severity"] == sev]
+        if not group:
+            continue
+        print(f"{sev.upper()}S ({len(group)})")
+        explained = set()
+        for f in sorted(group, key=lambda f: (f["rule"], f["file"], f["line"])):
+            tag = " [verify]" if f["confidence"] == "verify" else ""
+            print(f"  {f['rule']} {f['name']}{tag}  {f['file']}:{f['line']}")
+            if f["endpoint"]:
+                print(f"      {f['endpoint']}")
+            key = (f["rule"], f["message"])
+            if key in explained:
+                continue  # same explanation as the previous occurrence: location only
+            explained.add(key)
+            print(f"      {f['message']}")
+            print(f"      Fix: {f['fix']}")
+        print()
+    counts = {s: sum(f["severity"] == s for f in findings) for s in SEVERITIES}
+    print(f"{counts['error']} errors, {counts['warning']} warnings, {counts['suggestion']} suggestions. "
+          "These are pattern matches: confirm each in the code; [verify] marks heuristics.")
+
+
+def print_github(root, findings):
+    """GitHub Actions workflow commands: shown inline on the PR's changed files."""
+    level = {"error": "error", "warning": "warning", "suggestion": "notice"}
+    for f in findings:
+        title = f"{f['rule']} {f['name']}" + (" (verify)" if f["confidence"] == "verify" else "")
+        body = f"{f['message']}\nFix: {f['fix']}"
+        if f["endpoint"]:
+            body = f"{f['endpoint']}\n{body}"
+        print(f"::{level[f['severity']]} file={gh_escape(repo_relative(root, f['file']), True)},line={f['line']},"
+              f"title={gh_escape(title, True)}::{gh_escape(body)}")
+
+
+def print_markdown(root, stack, findings, scope):
+    counts = {s: sum(f["severity"] == s for f in findings) for s in SEVERITIES}
+    print("## Spring API quick check\n")
+    print(f"Spring Boot {stack['spring_boot'] or 'unknown'} · {stack['handlers']} handlers{scope} · "
+          f"**{counts['error']} errors, {counts['warning']} warnings, {counts['suggestion']} suggestions**\n")
+    if not findings:
+        print("No findings.")
+        return
+    icon = {"error": "🔴", "warning": "🟡", "suggestion": "🔵"}
+    print("| | Rule | Where | Finding |\n|---|---|---|---|")
+    for f in findings:
+        msg = f["message"].replace("|", "\\|").replace("\n", " ")
+        where = f"`{repo_relative(root, f['file'])}:{f['line']}`"
+        verify = " *(verify)*" if f["confidence"] == "verify" else ""
+        print(f"| {icon[f['severity']]} | {f['rule']} {f['name']}{verify} | {where} | {msg} |")
+    print("\nPattern matches from `quick_check.py`: confirm each in the code. `(verify)` marks heuristics.")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("root", nargs="?", default=".")
-    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--format", choices=["text", "json", "github", "markdown"], default="text",
+                    help="text (default), json, github (Actions annotations) or markdown (job summary)")
+    ap.add_argument("--json", action="store_true", help="same as --format json")
+    ap.add_argument("--diff-base", metavar="REF",
+                    help="only report findings in files changed since the branch diverged from REF (e.g. origin/main)")
     ap.add_argument("--fail-on", choices=["error", "warning", "suggestion", "never"], default="never",
-                    help="exit 1 when a finding at or above this severity exists (for CI)")
+                    help="exit 1 when a reported finding is at or above this severity (for CI)")
     ap.add_argument("--rules", help="comma-separated rule ids to run, e.g. QC03,QC08")
     ap.add_argument("--skip", help="comma-separated rule ids to leave out, e.g. QC16")
     ap.add_argument("--list-rules", action="store_true", help="print the rules and exit")
@@ -781,39 +880,30 @@ def main():
         for k, (name, summary) in RULES.items():
             print(f"{k}  {name:32} {summary}")
         return
-    root = os.path.abspath(args.root)
+    root = os.path.realpath(args.root)
+    fmt = "json" if args.json else args.format
     ids = lambda s: {r.strip().upper() for r in s.split(",") if r.strip()} if s else None  # noqa: E731
     stack, findings = run_checks(root, ids(args.rules), ids(args.skip))
 
-    if args.json:
-        print(json.dumps({"root": root, "stack": stack, "findings": findings,
+    scope = ""
+    if args.diff_base:
+        try:
+            changed = changed_files(root, args.diff_base)
+        except RuntimeError as e:
+            print(f"--diff-base {args.diff_base}: {e}", file=sys.stderr)
+            sys.exit(2)  # distinct from 1 ("findings at or above --fail-on") so CI can fall back
+        findings = [f for f in findings if f["file"] in changed]
+        scope = f" · files changed since {args.diff_base}: {len(changed)}"
+
+    if fmt == "json":
+        print(json.dumps({"root": root, "stack": stack, "diff_base": args.diff_base, "findings": findings,
                           "rules": {k: {"name": v[0], "summary": v[1]} for k, v in RULES.items()}}, indent=2))
+    elif fmt == "github":
+        print_github(root, findings)
+    elif fmt == "markdown":
+        print_markdown(root, stack, findings, scope)
     else:
-        boot = stack["spring_boot"] or "unknown"
-        print(f"Spring API quick check — {root}")
-        print(f"Spring Boot {boot} · validation: {stack['validation_namespace'] or 'none'} · "
-              f"{stack['handlers']} handlers · {stack['types']} types\n")
-        for sev in SEVERITIES:
-            group = [f for f in findings if f["severity"] == sev]
-            if not group:
-                continue
-            print(f"{sev.upper()}S ({len(group)})")
-            explained = set()
-            for f in sorted(group, key=lambda f: (f["rule"], f["file"], f["line"])):
-                tag = " [verify]" if f["confidence"] == "verify" else ""
-                print(f"  {f['rule']} {f['name']}{tag}  {f['file']}:{f['line']}")
-                if f["endpoint"]:
-                    print(f"      {f['endpoint']}")
-                key = (f["rule"], f["message"])
-                if key in explained:
-                    continue  # same explanation as the previous occurrence: location only
-                explained.add(key)
-                print(f"      {f['message']}")
-                print(f"      Fix: {f['fix']}")
-            print()
-        counts = {s: sum(f["severity"] == s for f in findings) for s in SEVERITIES}
-        print(f"{counts['error']} errors, {counts['warning']} warnings, {counts['suggestion']} suggestions. "
-              "These are pattern matches: confirm each in the code; [verify] marks heuristics.")
+        print_text(root, stack, findings, scope)
 
     if args.fail_on != "never":
         limit = SEVERITIES.index(args.fail_on)

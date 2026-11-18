@@ -1,0 +1,73 @@
+name: Spring API quick check
+description: Fast, deterministic checks for common Spring Boot REST API defects, shown as annotations on the pull request.
+author: filipelinemburger
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  path:
+    description: Project root (the folder with pom.xml or build.gradle), relative to the repository.
+    default: "."
+  fail-on:
+    description: Fail the step when a reported finding is at or above this severity — error, warning, suggestion or never.
+    default: error
+  changed-only:
+    description: On pull requests, report only findings in files the pull request changes. Needs the base commit (checkout with fetch-depth 0).
+    default: "true"
+  skip:
+    description: Comma-separated rule ids to leave out, e.g. QC16.
+    default: ""
+  rules:
+    description: Comma-separated rule ids to run (all when empty).
+    default: ""
+
+outputs:
+  errors:
+    description: Number of error findings reported.
+    value: ${{ steps.check.outputs.errors }}
+  warnings:
+    description: Number of warning findings reported.
+    value: ${{ steps.check.outputs.warnings }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_CHANGED_ONLY: ${{ inputs.changed-only }}
+        INPUT_SKIP: ${{ inputs.skip }}
+        INPUT_RULES: ${{ inputs.rules }}
+        BASE_REF: ${{ github.base_ref }}
+      run: |
+        set -uo pipefail
+        script="$GITHUB_ACTION_PATH/plugins/spring-api-validator/skills/spring-api-validator/scripts/quick_check.py"
+        args=("$INPUT_PATH")
+        [ -n "$INPUT_SKIP" ] && args+=(--skip "$INPUT_SKIP")
+        [ -n "$INPUT_RULES" ] && args+=(--rules "$INPUT_RULES")
+
+        if [ "$INPUT_CHANGED_ONLY" = "true" ] && [ -n "$BASE_REF" ]; then
+          git fetch --no-tags --quiet origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF" || true
+          if git merge-base "origin/$BASE_REF" HEAD > /dev/null 2>&1; then
+            args+=(--diff-base "origin/$BASE_REF")
+          else
+            echo "::warning title=Spring API quick check::Can't find where this branch left $BASE_REF (shallow clone?). Checking all files; use actions/checkout with fetch-depth: 0 to check only the changed ones."
+          fi
+        fi
+
+        python3 "$script" "${args[@]}" --format github
+        python3 "$script" "${args[@]}" --format markdown >> "$GITHUB_STEP_SUMMARY"
+        python3 "$script" "${args[@]}" --format json > "$RUNNER_TEMP/spring-api-quick-check.json"
+        python3 - "$RUNNER_TEMP/spring-api-quick-check.json" >> "$GITHUB_OUTPUT" <<'EOF'
+        import json, sys
+        findings = json.load(open(sys.argv[1]))["findings"]
+        print(f"errors={sum(f['severity'] == 'error' for f in findings)}")
+        print(f"warnings={sum(f['severity'] == 'warning' for f in findings)}")
+        EOF
+
+        if [ "$INPUT_FAIL_ON" != "never" ]; then
+          python3 "$script" "${args[@]}" --format json --fail-on "$INPUT_FAIL_ON" > /dev/null
+        fi

@@ -13,7 +13,7 @@ The core idea: **read what the code actually does, then compare it with what the
 
 ### 1. Settle the scope
 
-Work out from the request what to validate: the whole API, one controller, one endpoint, or the current change (`git diff` / branch vs main). For a change, validate the changed endpoints fully and only glance at the rest for consistency. Say the scope in the report.
+Work out from the request what to validate: the whole API, one controller, one endpoint, or the current change (`git diff` / branch vs main). For a change, validate the changed endpoints fully and only glance at the rest for consistency; `quick_check.py --diff-base <base>` limits the quick check to the changed files. Say the scope in the report. (When the user runs `/spring-api-validator:validate-api` with arguments, that skill settles the scope and output first and then hands over to this workflow.)
 
 ### 2. Read the stack before judging anything
 

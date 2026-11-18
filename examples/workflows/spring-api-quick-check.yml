@@ -1,0 +1,36 @@
+# Spring API quick check — free, deterministic, no API key.
+# Copy to .github/workflows/ in your Spring Boot repository.
+#
+# On every pull request that touches Java/Kotlin sources, build files or application config, it runs
+# the plugin's quick_check.py on the files the PR changes and shows findings as annotations on those
+# lines, plus a table in the job summary. The job fails on Errors (change fail-on to tune it).
+
+name: Spring API quick check
+
+on:
+  pull_request:
+    paths:
+      - "**/*.java"
+      - "**/*.kt"
+      - "**/pom.xml"
+      - "**/build.gradle*"
+      - "**/application*.yml"
+      - "**/application*.yaml"
+      - "**/application*.properties"
+
+permissions:
+  contents: read
+
+jobs:
+  quick-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed to find where the PR branch left its base, so only changed files are checked
+
+      - uses: filipelinemburger/spring-boot-api-validator@v0
+        with:
+          path: .          # folder with pom.xml / build.gradle (e.g. backend)
+          fail-on: error   # error | warning | suggestion | never
+          skip: QC16       # optional: rules to leave out (QC16 = bare orElseThrow heuristic)
