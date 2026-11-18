@@ -1,0 +1,17 @@
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    email VARCHAR(120) NOT NULL UNIQUE,
+    password_hash VARCHAR(100) NOT NULL
+);
+CREATE TABLE notebooks (
+    id UUID PRIMARY KEY,
+    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(80) NOT NULL
+);
+CREATE TABLE notes (
+    id UUID PRIMARY KEY,
+    notebook_id UUID NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
+    title VARCHAR(120) NOT NULL,
+    body TEXT NOT NULL,
+    tag VARCHAR(30) NOT NULL
+);

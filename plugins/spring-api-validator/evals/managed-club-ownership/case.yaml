@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: managed-club-ownership
+expected_outcome: |
+  review.md flags that PUT tactics accepts any club in the user's save, not only the managed club, so the user can rewrite AI opponents' tactics that the match engine uses, pointing to the managed-club check that staff hiring already does. It also flags youth promotion skipping the squad cap that free-agent signing enforces, and the season detail returning only the alphabetically first competition. It does not treat browsing rival squads/tactics as a vulnerability or misjudge Boot 3.4 method validation.
+context:
+  scaffold_script: place-files.sh

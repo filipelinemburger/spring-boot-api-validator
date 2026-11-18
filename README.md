@@ -55,7 +55,11 @@ The skill itself is a standard Agent Skill folder — [`plugins/spring-api-valid
 
 ## Development
 
-- `plugins/spring-api-validator/evals/` holds the test cases: three small Spring apps with planted defects (a full audit, an HTTP-verb review, and a Boot 2.7 app with team rules) and one grader file per expected finding. Run them with `claude plugin eval plugins/spring-api-validator --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
+- `plugins/spring-api-validator/evals/` holds six test cases — small Spring apps with planted defects and one grader file per expected finding:
+  - `full-audit-order-service`, `http-verbs-user-service`, `project-rules-boot2-catalog`: a full audit, an HTTP-verb review, and a Boot 2.7 app with team rules;
+  - `boot4-jwt-error-dispatch`, `managed-club-ownership`, `double-accept-transfers`: lessons from a real-app review — errors surfacing as 401 in a stateless JWT setup on Boot 4, writes allowed on clubs the user doesn't manage, and a counter offer that can be paid twice.
+  Every case also checks precision: that each top-severity finding is accurate, that working guards are acknowledged, and that latent issues aren't over-rated.
+  Run them with `claude plugin eval plugins/spring-api-validator --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
 - Validate before publishing: `claude plugin validate . --strict`.
 - `scripts/list_endpoints.py` (standard-library Python 3) prints the endpoint inventory the skill starts from: `python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/list_endpoints.py <project-root>`.
 

@@ -1,0 +1,12 @@
+package com.example.league.common;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.util.UUID;
+
+public final class CurrentUser {
+    private CurrentUser() {}
+    public static UUID id() {
+        return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName());
+    }
+}

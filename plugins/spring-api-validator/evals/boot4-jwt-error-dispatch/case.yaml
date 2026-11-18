@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: boot4-jwt-error-dispatch
+expected_outcome: |
+  api-report.md finds the cross-cutting problem: unhandled exceptions go to /error, the stateless JWT authentication is not present on the error dispatch, so clients get 401 instead of the real error and the frontend client logs the user out. It names concrete triggers (missing ?tag, malformed UUID, missing note via orElseThrow()), recommends permitting the error dispatch and handling framework exceptions, flags the BCrypt 72-byte limit, and does not mistake Boot 4 idioms (tools.jackson, UNPROCESSABLE_CONTENT) for bugs.
+context:
+  scaffold_script: place-files.sh

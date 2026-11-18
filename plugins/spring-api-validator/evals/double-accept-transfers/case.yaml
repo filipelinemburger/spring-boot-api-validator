@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: double-accept-transfers
+expected_outcome: |
+  transfers-review.md finds that a second countered offer for a player can be accepted after he has been bought, charging the buyer and paying the old seller again, because execution never re-checks the seller still owns him; that offer wages fit NUMERIC(14,2) but are copied into players.wage NUMERIC(10,2), failing at flush and surfacing as a misleading 409; that a loan request without ownerWageShare/mayRecall executes immediately on defaulted terms; and the missing concurrency guard. It accepts the gateway note on authentication and the correct sequential handling of repeated accepts.
+context:
+  scaffold_script: place-files.sh

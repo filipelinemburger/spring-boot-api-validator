@@ -65,7 +65,7 @@ Static reading is the default. If the user asks for it, or a finding can only be
 
 ### 7. Report
 
-Verify every finding against the code before writing it: re-open the line, confirm the version/config it depends on. When you describe a consequence ("`{}` wipes the product"), trace that exact request through the handler: if an earlier failure (an NPE, a binding error) stops it first, describe the request that really reaches the damage instead. Keep counts in the summary consistent with the findings below it. If something depends on runtime config you couldn't see, mark it "likely" and say what would confirm it. Only report what you checked.
+Verify every finding against the code before writing it: re-open the line, confirm the version/config it depends on. When you describe a consequence ("`{}` wipes the product"), trace that exact request through the handler: if an earlier failure (an NPE, a binding error) stops it first, describe the request that really reaches the damage instead. Keep every count consistent with what it counts — in the summary, the inventory and "Looks good". Check that each suggested fix works where it runs: inside a `@Transactional` method, state you change and then throw away with an exception is rolled back, so "mark the offer rejected, then throw" doesn't persist the rejection. When existing guards already handle a case (a sequential repeat rejected with 409, a status check), say so in "Looks good" so the reader knows which risks remain and which don't. If something depends on runtime config you couldn't see, mark it "likely" and say what would confirm it. Only report what you checked.
 
 Use this structure:
 
@@ -106,5 +106,7 @@ Severity guide:
 - **Error**: wrong behaviour now — validation that never runs, a binding that throws 500, a safe verb with side effects, data loss (PUT/PATCH nulling fields), exposed secrets, a handler matching every HTTP method.
 - **Warning**: the API works but breaks its contract or HTTP semantics — wrong verb for the operation, wrong status code, entity exposure, inconsistent error bodies, missing 404 handling.
 - **Suggestion**: naming, path style, documentation, consistency polish.
+
+Rate by what happens today, not what could happen: a defect no current code path reaches (a recursive `hashCode` nothing calls, a constraint on a field no endpoint binds) is a Warning at most, with the trigger named.
 
 Keep findings specific: one finding per root cause, grouped when the same mistake repeats ("`@Valid` missing on 4 handlers: …"). Don't pad the report with generic advice that doesn't point at a line of code. If the user asked to fix things, apply fixes only after the report, keeping each fix minimal and consistent with the codebase, and re-check the changed endpoints.
