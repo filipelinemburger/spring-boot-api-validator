@@ -52,6 +52,7 @@ These facts are the ones reviews most often get wrong from memory. Check them ag
 - Spring Data 3.x `deleteById` ignores a missing id; 2.x throws `EmptyResultDataAccessException`.
 - Spring MVC answers HEAD by running the GET handler, so a GET's side effects happen on HEAD too.
 - MockMvc doesn't perform error dispatches; anything about `/error` behaviour has to be confirmed against a running server.
+- Throwing `ResponseStatusException` (or a subclass) does not by itself give clients a ProblemDetail body. That needs `spring.mvc.problemdetails.enabled=true` or an advice extending `ResponseEntityExceptionHandler`/returning `ProblemDetail`; without either, Boot's `/error` renders its default body, which leaves out the reason message by default (`server.error.include-message=never`). Say "ProblemDetail" only when you've seen what enables it.
 
 Go through these areas, reading the reference file for an area when an endpoint touches it. A small scope (one controller, a diff) means fewer endpoints, not a shallower check: still read the reference for every area the endpoints in scope touch. The references explain *why* each rule matters and how Spring behaves at runtime, which is what lets you tell a real bug from a style preference.
 
