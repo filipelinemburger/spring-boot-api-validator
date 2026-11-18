@@ -2,6 +2,6 @@
 reports/
 *-workspace/
 # claude plugin eval results
-plugins/*/evals/results/
+evals/results/
 .DS_Store
 __pycache__/

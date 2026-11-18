@@ -1,6 +1,6 @@
 """Regression test for scripts/quick_check.py against the eval apps.
 
-Run from the repository root:  python3 -m unittest discover plugins/spring-api-validator/tests
+Run from the repository root:  python3 -m unittest discover tests
 It checks that every planted mechanical defect is still detected (recall) and that the clean
 parts of the apps stay quiet (precision), so rule changes can't silently break detection.
 """
@@ -10,14 +10,16 @@ import sys
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PLUGIN = os.path.dirname(HERE)
+ROOT = os.path.dirname(HERE)
+PLUGIN = os.path.join(ROOT, "plugins", "spring-api-validator")
+EVALS = os.path.join(ROOT, "evals")
 sys.path.insert(0, os.path.join(PLUGIN, "skills", "spring-api-validator", "scripts"))
 
 import quick_check  # noqa: E402
 
 
 def check(case):
-    _, findings = quick_check.run_checks(os.path.join(PLUGIN, "evals", case, "files"))
+    _, findings = quick_check.run_checks(os.path.join(EVALS, case, "files"))
     return findings
 
 
@@ -71,7 +73,7 @@ class QuickCheckTest(unittest.TestCase):
         self.assertEqual(check("managed-club-ownership"), [])
 
     def test_skip_and_only(self):
-        root = os.path.join(PLUGIN, "evals", "full-audit-order-service", "files")
+        root = os.path.join(EVALS, "full-audit-order-service", "files")
         _, only = quick_check.run_checks(root, only={"QC10"})
         self.assertEqual(set(rules(only)), {"QC10"})
         _, skipped = quick_check.run_checks(root, skip={"QC16"})
@@ -99,7 +101,7 @@ class KotlinAndWebFluxTest(unittest.TestCase):
     def test_advice_and_functional_routes_depend_on_version_and_scope(self):
         import shutil
         import tempfile
-        src = os.path.join(PLUGIN, "evals", "webflux-shop-api", "files")
+        src = os.path.join(EVALS, "webflux-shop-api", "files")
         advice = os.path.join("src", "main", "java", "com", "example", "shop", "common", "ApiExceptionHandler.java")
         for change, label in ((("pom.xml", "<version>3.3.5</version>", "<version>2.7.18</version>"), "WebFlux on Spring 5"),
                               ((advice, "@RestControllerAdvice\n",
@@ -118,7 +120,7 @@ class KotlinAndWebFluxTest(unittest.TestCase):
 
     def test_functional_routes_in_inventory(self):
         import list_endpoints
-        root = os.path.join(PLUGIN, "evals", "webflux-shop-api", "files")
+        root = os.path.join(EVALS, "webflux-shop-api", "files")
         found = []
         for dirpath, _, filenames in os.walk(root):
             for fn in filenames:
@@ -208,7 +210,7 @@ class DiffScopeTest(unittest.TestCase):
         import tempfile
         script = os.path.join(PLUGIN, "skills", "spring-api-validator", "scripts", "quick_check.py")
         with tempfile.TemporaryDirectory() as tmp:
-            shutil.copytree(os.path.join(PLUGIN, "evals", "full-audit-order-service", "files"), tmp, dirs_exist_ok=True)
+            shutil.copytree(os.path.join(EVALS, "full-audit-order-service", "files"), tmp, dirs_exist_ok=True)
             git = ["git", "-C", tmp, "-c", "user.name=t", "-c", "user.email=t@example.com"]
             subprocess.run(git + ["init", "-q", "-b", "main"], check=True)
             subprocess.run(git + ["add", "-A"], check=True)

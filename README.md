@@ -115,15 +115,17 @@ The skill itself is a standard Agent Skill folder — [`plugins/spring-api-valid
 
 ## Development
 
-- `plugins/spring-api-validator/evals/` holds six test cases — small Spring apps with planted defects and one grader file per expected finding:
+- `evals/` holds nine test cases — small Spring apps with planted defects and one grader file per expected finding:
   - `full-audit-order-service`, `http-verbs-user-service`, `project-rules-boot2-catalog`: a full audit, an HTTP-verb review, and a Boot 2.7 app with team rules;
-  - `boot4-jwt-error-dispatch`, `managed-club-ownership`, `double-accept-transfers`: lessons from a real-app review — errors surfacing as 401 in a stateless JWT setup on Boot 4, writes allowed on clubs the user doesn't manage, and a counter offer that can be paid twice.
-  Every case also checks precision: that each top-severity finding is accurate, that working guards are acknowledged, and that latent issues aren't over-rated.
-  Run them with `claude plugin eval plugins/spring-api-validator --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
+  - `boot4-jwt-error-dispatch`, `managed-club-ownership`, `double-accept-transfers`: lessons from a real-app review — errors surfacing as 401 in a stateless JWT setup on Boot 4, writes allowed on clubs the user doesn't manage, and a counter offer that can be paid twice;
+  - `kotlin-books-api`, `webflux-shop-api`: Kotlin + Spring MVC, and WebFlux with functional routes;
+  - `openapi-drift-orders`: a published OpenAPI spec that has drifted from the code.
+  Every case also checks precision: that no finding makes a materially wrong claim, that working guards are acknowledged, and that latent issues aren't over-rated.
+  They live outside the plugin folder, so they aren't shipped to users. Run them with `claude plugin eval plugins/spring-api-validator --eval-dir evals --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
 - Validate before publishing: `claude plugin validate . --strict`.
 - `scripts/list_endpoints.py` (standard-library Python 3) prints the endpoint inventory the skill starts from: `python3 plugins/spring-api-validator/skills/spring-api-validator/scripts/list_endpoints.py <project-root>`.
 - `.github/workflows/ci.yml` runs the unit tests, validates the plugin and marketplace, and runs this repository's own action on an eval app to check its outputs and failure behaviour.
-- `tests/test_quick_check.py` runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet: `python3 -m unittest discover plugins/spring-api-validator/tests`.
+- `tests/test_quick_check.py` (repository root) runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet: `python3 -m unittest discover tests`.
 
 ## License
 

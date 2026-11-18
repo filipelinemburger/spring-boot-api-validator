@@ -2,6 +2,12 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
+## 0.7.2 — 2026-11-18
+### Changed
+- The plugin folder now ships only what the plugin uses — skills, references, the three `#!` Python scripts, the README, LICENSE and the PNG icon — as the Claude plugin directory requires. The test apps moved to `evals/`, the unit tests to `tests/` and the icon's SVG source to `branding/`, all at the repository root (run the evals with `--eval-dir evals`).
+- The icon PNG no longer carries EXIF metadata.
+- The plugin folder's README no longer includes `/plugin install … --marketplace …` commands (the directory flags fetch-and-install lines as an install-time risk); install instructions stay in the repository README.
+
 ## 0.7.1 — 2026-11-18
 ### Changed
 - Plugin, marketplace and repository descriptions now cover everything the plugin does (Kotlin and WebFlux, OpenAPI drift, the standalone checker, the `/validate-api` command and the GitHub Action).

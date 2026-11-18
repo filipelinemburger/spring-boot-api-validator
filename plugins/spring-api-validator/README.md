@@ -4,11 +4,7 @@ Reviews the REST API of a Spring Boot application (Java or Kotlin, Spring MVC or
 
 ## Install
 
-```
-/plugin install spring-api-validator --marketplace filipelinemburger/spring-boot-api-validator
-```
-
-On Claude Code older than 2.1.275, add the marketplace first: `/plugin marketplace add filipelinemburger/spring-boot-api-validator`, then `/plugin install spring-api-validator@spring-tools`.
+Install it from the Claude plugin directory, or from its own `spring-tools` marketplace as described in the repository README.
 
 ## Use
 
@@ -25,7 +21,6 @@ Full documentation, the GitHub Action and example workflows: https://github.com/
 - **Optional runtime check**: only when you ask for it (or approve it for a finding that needs it), it may start the application locally and send HTTP requests to that local or test instance — never to other hosts, and write requests only against local data.
 - **Pull-request comments**: only with `--comment`, the `validate-api` command posts review comments and a summary on that pull request through GitHub (the GitHub inline-comment tool and/or the `gh` CLI, with your existing GitHub credentials). Nothing else is sent anywhere.
 - **No telemetry**, no data collection, no credentials or tokens read or stored by the plugin.
-- `evals/` and `tests/` hold test apps and regression tests for developing the plugin; the plugin never runs them (`claude plugin eval` and `python3 -m unittest` do, when a developer asks).
 
 ## License
 
