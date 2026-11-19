@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: clinic-method-security
+expected_outcome: |
+  review.md flags that POST …/appointments/bulk-cancel reaches cancel() through a self-call, so its @PreAuthorize never runs and any authenticated user can cancel any clinic's appointments, and that reschedule loads the appointment by id alone, so a manager of one clinic can move another clinic's appointments, unlike cancel's clinic-scoped lookup. It does not call the single cancel endpoint unprotected, and does not claim the "Slot already booked" ResponseStatusException bypasses the ResponseEntityExceptionHandler-based advice.
+context:
+  scaffold_script: place-files.sh

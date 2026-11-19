@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: warehouse-readonly-traps
+expected_outcome: |
+  review.md flags that GET /api/items/{id}?currency=… converts the price in place inside a read-write transaction, so a read permanently rewrites the stored price and currency; that StockReceiptRequest's javax.validation constraints are ignored on Boot 3, so negative receipts lower stock past the withdrawal check; and that the class-level @Validated on ReportController turns out-of-range parameters into an unhandled ConstraintViolationException (500). It does not claim the read-only list persists conversions, that @Min on ItemController's path variables is ignored on Spring 6.1, or that deleting a missing item fails. It also notes that body errors on the receipts and withdrawals endpoints arrive as HandlerMethodValidationException (no field names) because their path variables carry constraints.
+context:
+  scaffold_script: place-files.sh

@@ -16,7 +16,7 @@ One line per check: what to look for → what happens at runtime → default sev
 - `@PathVariable` name not in the URI template → `MissingPathVariableException` → 500 **E**. Unnamed params break only without `-parameters` on Spring 6.1+ (Boot parent/Gradle plugin set it).
 - `required = false` on a primitive (Java `int`, Kotlin non-null `Int`) without `defaultValue` → 500 when absent **E**.
 - Missing required param → 400; wrong type → 400; enum params are case-sensitive.
-- Date params without `@DateTimeFormat` (and no `spring.mvc.format.*`): ISO fails before 6.1 → W; 6.1+ falls back to ISO → S.
+- Date params without `@DateTimeFormat` (and no `spring.mvc.format.*`): ISO fails before 6.0 (Boot 2.x) → W; 6.0+ falls back to ISO → S.
 - Two `@RequestBody`s → **E**. Two equally specific patterns (`/{id}` vs `/{name}`) → ambiguous 500 **E**. Context/base path and `configurePathMatch` prefixes change real URLs.
 
 ## Bean Validation  (→ validation.md)
@@ -27,7 +27,7 @@ One line per check: what to look for → what happens at runtime → default sev
 - `@NotNull` on a primitive → can't fail, missing → 0/false W. Primitive in a request body without `@NotNull` wrapper → silently 0/false W.
 - `null` passes every constraint except `@NotNull`/`@NotEmpty`/`@NotBlank`. Required text → `@NotBlank`.
 - Limits wider than the DB column (`VARCHAR`, `NUMERIC(p,s)`, incl. values copied later into a narrower column) → DB error 500 W/E. BCrypt passwords: `@Size(max > 72)` → 500 on encode W.
-- Param constraints (`@PathVariable @Min`): built in on 6.1+ (400); before 6.1 need class `@Validated` (→ `ConstraintViolationException`, 500 unless handled). Class `@Validated` on 6.1+ switches back to that path.
+- Param constraints (`@PathVariable @Min`): built in on 6.1+ (400); before 6.1 need class `@Validated` (→ `ConstraintViolationException`, 500 unless handled). Class `@Validated` on 6.1+ switches back to that path. On 6.1+, a constrained parameter next to `@Valid @RequestBody` makes body errors arrive as `HandlerMethodValidationException`, not `MethodArgumentNotValidException` — check the advice formats both the same way → W.
 - Same DTO for create and partial update with `@NotNull` everywhere → W (separate DTOs or groups via `@Validated(Group)`).
 
 ## Request/response objects & Jackson  (→ dto-serialization.md)

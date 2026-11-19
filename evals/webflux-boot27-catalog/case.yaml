@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: webflux-boot27-catalog
+expected_outcome: |
+  review.md flags, for this Spring Boot 2.7 (Spring 5.3) WebFlux app, that CategoryNotFoundException from the functional /api/categories routes isn't handled by the @RestControllerAdvice (advice covers functional routes only from Spring 6.0), so a missing category is a 500 instead of a 404; that @Min/@Max on the list's page/size parameters aren't applied without class-level @Validated before Spring 6.1, with a concrete consequence; and that the LocalDate parameters of /api/products/released don't accept ISO dates without @DateTimeFormat on Spring 5.3. It does not claim ProductNotFoundException from the annotated controller misses the advice.
+context:
+  scaffold_script: place-files.sh

@@ -684,6 +684,84 @@ class Report:
         })
 
 
+
+def pattern_max_length(regex):
+    """Longest string a simple regex can match, or None when unbounded or too complex to tell.
+
+    Handles literals, escapes, character classes, groups, alternation and ?, {n}, {n,m} quantifiers —
+    enough for codes like [A-Z]{3}, \\d{4,6} or (EUR|USD)."""
+    i, n = 0, len(regex)
+
+    def alternation():
+        nonlocal i
+        best = sequence()
+        while i < n and regex[i] == "|":
+            i += 1
+            other = sequence()
+            best = None if best is None or other is None else max(best, other)
+        return best
+
+    def sequence():
+        nonlocal i
+        total = 0
+        while i < n and regex[i] not in "|)":
+            unit = atom()
+            if unit is None:
+                return None
+            if i < n and regex[i] in "*+":
+                return None
+            if i < n and regex[i] == "?":
+                i += 1
+            elif i < n and regex[i] == "{":
+                m = re.match(r"\{(\d+)(?:,(\d*))?\}", regex[i:])
+                if not m or (m.group(2) == ""):
+                    return None
+                unit *= int(m.group(2) or m.group(1))
+                i += m.end()
+            if i < n and regex[i] in "?+" and regex[i - 1] in "?}":
+                i += 1  # lazy/possessive suffix
+            total += unit
+        return total
+
+    def atom():
+        nonlocal i
+        c = regex[i]
+        if c in "^$":
+            i += 1
+            return 0
+        if c == "\\":
+            i += 2
+            return 1
+        if c == "[":
+            j = i + 1
+            if j < n and regex[j] == "^":
+                j += 1
+            if j < n and regex[j] == "]":
+                j += 1
+            while j < n and regex[j] != "]":
+                j += 2 if regex[j] == "\\" else 1
+            if j >= n:
+                return None
+            i = j + 1
+            return 1
+        if c == "(":
+            i += 1
+            if regex.startswith("?:", i):
+                i += 2
+            inner = alternation()
+            if inner is None or i >= n or regex[i] != ")":
+                return None
+            i += 1
+            return inner
+        i += 1
+        return 1
+
+    try:
+        result = alternation()
+    except IndexError:
+        return None
+    return result if i == n else None
+
 def run_checks(root, only=None, skip=None):
     rep = Report(only, skip)
     build_files = read_files(root, [r"pom\.xml", r"build\.gradle(\.kts)?", r"libs\.versions\.toml"])
@@ -865,10 +943,10 @@ def run_checks(root, only=None, skip=None):
             rp = p.anno("RequestParam") or p.anno("PathVariable")
             if rp is not None and raw_type(p.type) in DATE_TYPES and not p.anno("DateTimeFormat") \
                     and not date_format_global:
-                newer = boot is not None and boot >= (3, 2)
+                newer = boot is not None and boot >= (3, 0)  # ISO fallback since Spring 6.0
                 rep.add("QC14", "suggestion" if newer else "warning", rel, p.line,
                         f"{raw_type(p.type)} parameter '{p.name}' has no @DateTimeFormat. "
-                        + ("Spring 6.1+ falls back to ISO parsing, so ISO input binds, but the accepted formats "
+                        + ("Spring 6.0+ falls back to ISO parsing, so ISO input binds, but the accepted formats "
                            "aren't explicit." if newer else
                            "It is parsed with a locale-dependent short style, so ISO input like 2026-11-17 fails "
                            "with 400."),
@@ -1030,6 +1108,11 @@ def run_checks(root, only=None, skip=None):
                 mx = re.search(r"max\s*=\s*(\d+)", size[1]) if size else None
                 if mx and int(mx.group(1)) <= limit[1]:
                     continue
+                pattern = f.anno("Pattern")
+                rx = re.search(r'regexp\s*=\s*"((?:[^"\\]|\\.)*)"', pattern[1]) if pattern else None
+                plen = pattern_max_length(rx.group(1).encode().decode("unicode_escape")) if rx else None
+                if plen is not None and plen <= limit[1]:
+                    continue  # @Pattern matches the whole value, so a bounded regex bounds the length
                 allowed = f"up to {mx.group(1)} characters" if mx else "any length"
                 rep.add("QC20", "warning", t.src.rel, f.line,
                         f"{t.name}.{f.name} allows {allowed}, but it is stored in {column} {describe_limit(limit)} "

@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: clinic
+  jpa:
+    open-in-view: false
+  datasource:
+    url: jdbc:postgresql://localhost:5432/clinic
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://auth.example.com/realms/clinic

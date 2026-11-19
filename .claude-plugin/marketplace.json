@@ -9,7 +9,7 @@
       "name": "spring-api-validator",
       "source": "./plugins/spring-api-validator",
       "description": "Review Spring Boot REST APIs (Java/Kotlin, MVC/WebFlux): HTTP verbs and statuses, binding, validation, DTOs, errors, ownership and OpenAPI drift, with a /validate-api command for PRs.",
-      "version": "0.9.0"
+      "version": "0.9.1"
     }
   ]
 }

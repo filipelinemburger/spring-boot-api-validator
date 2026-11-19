@@ -24,6 +24,7 @@ Validation bugs are usually silent: the annotations are there, the code compiles
 
 - Constraints directly on method parameters (`@PathVariable @Min(1) Long id`, `@RequestParam @Size(max = 50) String q`):
   - **Spring 6.1+ (Boot 3.2+)**: applied automatically by built-in method validation → `HandlerMethodValidationException` → 400. Class-level `@Validated` is *not* needed — and if present, the AOP proxy validates instead and throws `ConstraintViolationException`, which is a **500** unless an `@ExceptionHandler` maps it. Flag class-level `@Validated` on controllers in 6.1+ projects when no handler for `ConstraintViolationException` exists.
+    - It also changes how the **body** fails: when any parameter of a handler has a constraint (`@PathVariable @Min(1) Long id` next to `@Valid @RequestBody`), the body is validated as part of method validation, so an invalid body raises `HandlerMethodValidationException`, not `MethodArgumentNotValidException`. An advice that formats field errors only for `MethodArgumentNotValidException` then answers those endpoints with its parameter-error shape (or Boot's default body), usually without field names — a Warning when the API promises field-level errors.
   - **Before 6.1**: only applied if the controller class has `@Validated`; otherwise silently ignored (Error). Failures throw `ConstraintViolationException` → **500** unless handled (Warning: needs an `@ExceptionHandler` mapping to 400).
 
 ## Constraint semantics that trip people up

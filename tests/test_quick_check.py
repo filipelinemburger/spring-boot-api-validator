@@ -71,6 +71,30 @@ class QuickCheckTest(unittest.TestCase):
     def test_clean_app_is_quiet(self):
         # The ownership bugs in this app are semantic; there is nothing mechanical to flag.
         self.assertEqual(check("managed-club-ownership"), [])
+        # Same for method security: self-invocation and unscoped lookups need the review.
+        self.assertEqual(check("clinic-method-security"), [])
+
+    def test_warehouse_leftover_javax_and_pattern_bound(self):
+        f = check("warehouse-readonly-traps")
+        self.assertEqual([x["file"].split("/")[-1] for x in f if x["rule"] == "QC02"], ["StockReceiptRequest.java"])
+        # currency is @Pattern("[A-Z]{3}") into VARCHAR(3): the pattern bounds the length
+        self.assertNotIn("QC20", rules(f))
+
+    def test_spring5_webflux_dates_and_functional_routes(self):
+        f = check("webflux-boot27-catalog")
+        self.assertEqual(len(at(f, "QC14", "ProductController.java")), 2)
+        self.assertTrue(all(x["severity"] == "warning" for x in at(f, "QC14", "ProductController.java")))
+        self.assertTrue(at(f, "QC24", "CategoryHandler.java"))
+
+    def test_pattern_max_length(self):
+        m = quick_check.pattern_max_length
+        self.assertEqual(m("[A-Z]{3}"), 3)
+        self.assertEqual(m(r"\d{4,6}"), 6)
+        self.assertEqual(m("(EUR|USD|GBPX)"), 4)
+        self.assertEqual(m("^[a-z]{2}-[A-Z]{2}$"), 5)
+        self.assertEqual(m("(?:ab|cde)?x"), 4)
+        for unbounded in ("[A-Z]+", ".*", "[a-z]{3,}", "a(b"):
+            self.assertIsNone(m(unbounded), unbounded)
 
     def test_skip_and_only(self):
         root = os.path.join(EVALS, "full-audit-order-service", "files")

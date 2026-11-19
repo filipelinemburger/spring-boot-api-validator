@@ -2,6 +2,14 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
+## 0.9.1 — 2026-11-18
+### Fixed
+- Dates: Spring falls back to ISO parsing for `java.time` parameters since **6.0** (Boot 3.0), not 6.1. The skill and the checker's QC14 now say so (QC14 is a Suggestion from Boot 3.0).
+- The checker's QC20 no longer flags a string whose `@Pattern` already bounds its length (`[A-Z]{3}` into `VARCHAR(3)`).
+### Added
+- The skill knows that on Spring 6.1+ a constrained parameter next to `@Valid @RequestBody` makes body errors arrive as `HandlerMethodValidationException` instead of `MethodArgumentNotValidException`.
+- Three harder test apps: `warehouse-readonly-traps`, `clinic-method-security`, `webflux-boot27-catalog`, with decoys that punish false alarms. Measured with and without the skill: both found every planted defect (17/17 each); the round's value was the two corrections above.
+
 ## 0.9.0 — 2026-11-18
 ### Changed
 - **One edition.** The quick-check scripts moved out of the plugin to `checker/` at the repository root, so the plugin on `main` is what the Claude plugin directory accepts (Markdown, JSON, YAML and the icon only). The skill and `/validate-api` build the inventory and do the mechanical checks by reading the code — measured in 0.8.0 at the same accuracy and cost as with the scripts.
