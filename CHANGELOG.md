@@ -2,6 +2,14 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
+## 0.11.0 — 2026-11-19
+### Added
+- Quick-check rules from defects confirmed in real open-source projects, each checked to fire there and stay quiet on the other projects and all test apps:
+  - **QC31 catch-all-handler-500** (Error): `@ExceptionHandler(Exception/Throwable/RuntimeException)` in an advice that doesn't extend `ResponseEntityExceptionHandler`, so malformed JSON, wrong parameter types, 404/405/415 and `@PreAuthorize` denials become 500 (spring-petclinic-rest).
+  - **QC32 ant-matcher-trailing-slash** (Error, verify): on Boot 2.x, a restrictive `antMatchers("/x")` misses `/x/`, which Spring MVC serves and a broader `permitAll` then lets through (RealWorld: anonymous `GET /articles/feed/`).
+  - **QC33 location-without-context-path**, **QC34 no-content-with-body**, **QC35 empty-collection-404** (Warnings, spring-petclinic-rest).
+- The skill's checklist covers 204-with-body, context-path `Location` headers and the Spring Security 5 trailing-slash gap.
+
 ## 0.10.0 — 2026-11-19
 ### Added
 - Quick-check rule **QC30 cascade-to-shared-entity**: `cascade = ALL`/`REMOVE` on a `@ManyToOne` or `@ManyToMany` (Java and Kotlin), an Error when something in the code deletes those entities. Removing one row then removes the shared row it points to — with `ON DELETE CASCADE` in the schema, other users' data goes with it.

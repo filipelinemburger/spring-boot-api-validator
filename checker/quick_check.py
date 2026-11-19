@@ -97,6 +97,11 @@ RULES = {
     "QC28": ("spec-schema-drift", "Property names or types differ between the spec schema and the DTO's JSON"),
     "QC29": ("annotation-doc-drift", "springdoc annotations (@ApiResponse, @Schema required) contradict the code"),
     "QC30": ("cascade-to-shared-entity", "cascade = ALL/REMOVE on a @ManyToOne or @ManyToMany: deleting one row deletes rows others still use"),
+    "QC31": ("catch-all-handler-500", "@ExceptionHandler(Exception) in an advice that doesn't extend ResponseEntityExceptionHandler turns client errors (bad JSON, wrong types, 404/405/415, 403) into 500"),
+    "QC32": ("ant-matcher-trailing-slash", "Restrictive antMatchers path that Spring MVC also serves with a trailing slash, which a broader permitAll rule then lets through (Spring Security 5)"),
+    "QC33": ("location-without-context-path", "Location header built from a bare path while a context path is configured: it points to the wrong URL"),
+    "QC34": ("no-content-with-body", "204 No Content returned with a body: the body never reaches the client"),
+    "QC35": ("empty-collection-404", "Empty list answered with 404 instead of 200 []"),
     "QC24": ("advice-skips-functional-routes", "Exception mapped in @ControllerAdvice is thrown from a functional route the advice doesn't cover (WebFlux on Spring 5, or advice scoped by package/type)"),
 }
 
@@ -763,6 +768,31 @@ def pattern_max_length(regex):
         return None
     return result if i == n else None
 
+
+def split_top(args):
+    """Split call arguments on top-level commas."""
+    parts, depth, cur, in_str = [], 0, "", False
+    for ch in args:
+        if in_str:
+            cur += ch
+            if ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "([{<":
+            depth += 1
+        elif ch in ")]}>":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append(cur.strip())
+            cur = ""
+            continue
+        cur += ch
+    if cur.strip():
+        parts.append(cur.strip())
+    return parts
+
 def run_checks(root, only=None, skip=None):
     rep = Report(only, skip)
     build_files = read_files(root, [r"pom\.xml", r"build\.gradle(\.kts)?", r"libs\.versions\.toml"])
@@ -1413,6 +1443,137 @@ def run_checks(root, only=None, skip=None):
                            f"removes a {t.name}."),
                         f"Drop REMOVE/ALL from the cascade on {t.name}.{f.name} (keep PERSIST/MERGE if needed); "
                         f"cascade removal belongs on compositions (@OneToMany/@OneToOne to rows only this one owns).")
+
+    controllers = [x for x in sources if re.search(r"@(RestController|Controller)\b", x.text)]
+
+    # QC31 — a catch-all handler that turns framework 4xx into 500
+    framework_4xx = [
+        ("HttpMessageNotReadableException", "malformed or unreadable JSON (400)"),
+        ("MethodArgumentTypeMismatchException", "a parameter of the wrong type, e.g. /owners/abc (400)"),
+        ("MissingServletRequestParameterException", "a missing required parameter (400)"),
+        ("HttpRequestMethodNotSupportedException", "a wrong HTTP method (405)"),
+        ("HttpMediaTypeNotSupportedException", "an unsupported Content-Type (415)"),
+    ]
+    if boot is not None and boot >= (3, 2):
+        framework_4xx.append(("NoResourceFoundException", "an unknown path (404)"))
+    if re.search(r"spring-boot-starter-security|spring-security", build_text) and \
+            re.search(r"@(PreAuthorize|PostAuthorize|Secured|RolesAllowed)\b", all_src):
+        framework_4xx.append(("AccessDeniedException", "a @PreAuthorize/@Secured denial (403)"))
+    advice_text = "\n".join(x.text for x in sources if re.search(r"@(Rest)?ControllerAdvice\b", x.text))
+    if not webflux:
+        for x in sources:
+            if not re.search(r"@(Rest)?ControllerAdvice\b", x.text) or \
+                    re.search(r"(extends|:)\s*ResponseEntityExceptionHandler\b", x.text):
+                continue
+            catch_all = re.search(r"@ExceptionHandler\s*\(([^)]*\b(?:java\.lang\.)?(?:Exception|Throwable|RuntimeException)"
+                                  r"(?:\.class|::class)[^)]*)\)", x.text) or \
+                re.search(r"@ExceptionHandler\s+(?:@\w+(?:\([^)]*\))?\s+)*(?:public\s+|protected\s+|fun\s+)?[\w<>?, ]*?\w+\s*"
+                          r"\(\s*(?:final\s+)?(?:\w+\s*:\s*)?(?:Exception|Throwable|RuntimeException)\b", x.text)
+            if not catch_all:
+                continue
+            missing = [(e, what) for e, what in framework_4xx if e not in advice_text]
+            if not missing:
+                continue
+            body = x.text[catch_all.end():catch_all.end() + 1500]
+            to_500 = re.search(r"INTERNAL_SERVER_ERROR|\b500\b", body.split("@ExceptionHandler")[0])
+            rep.add("QC31", "error", x.rel, x.line(catch_all.start()),
+                    "This advice catches every exception but doesn't extend ResponseEntityExceptionHandler or handle "
+                    "Spring's own 4xx exceptions, so these "
+                    + ("come back as 500" if to_500 else "end up in the catch-all instead of their real status")
+                    + ": " + "; ".join(w for _, w in missing)
+                    + ". Clients see server errors for their own mistakes, and monitoring counts them as outages.",
+                    "Extend ResponseEntityExceptionHandler (it maps Spring's exceptions to their 4xx statuses) or add "
+                    "handlers for those exceptions; let AccessDeniedException through to Spring Security.",
+                    confidence="certain" if to_500 else "verify")
+
+    # QC32 — Spring Security 5 antMatchers and Spring MVC's trailing-slash match
+    if boot is not None and boot < (3, 0) and not webflux and "setUseTrailingSlashMatch(false)" not in all_src:
+        for x in sources:
+            if ".antMatchers" not in x.text:
+                continue
+            permits = []
+            for m in re.finditer(r"\.antMatchers\s*\(([^)]*)\)\s*\.\s*permitAll\s*\(", x.text):
+                permits += [(pre, m.group(1)) for pre in re.findall(r'"([^"]+)/\*\*"', m.group(1))]
+            open_all = re.search(r"anyRequest\s*\(\s*\)\s*\.\s*permitAll", x.text)
+            restrictive = r"(authenticated|fullyAuthenticated|hasRole|hasAnyRole|hasAuthority|hasAnyAuthority|denyAll|access)"
+            for m in re.finditer(r"\.antMatchers\s*\(([^)]*)\)\s*\.\s*" + restrictive + r"\b", x.text):
+                method = re.search(r"HttpMethod\.(\w+)", m.group(1))
+                for path in re.findall(r'"([^"]+)"', m.group(1)):
+                    if path.endswith("**") or path.endswith("/"):
+                        continue
+                    wider = [pre for pre, args in permits if path.startswith(pre + "/")
+                             and (not method or not re.search(r"HttpMethod\.", args) or method.group(0) in args)]
+                    if not wider and not open_all:
+                        continue
+                    via = f'"{wider[0]}/**" ... permitAll()' if wider else "anyRequest().permitAll()"
+                    rep.add("QC32", "error", x.rel, x.line(m.start()),
+                            f'antMatchers("{path}").{m.group(2)}() matches only "{path}", but Spring MVC (Boot 2.x) '
+                            f'also serves "{path}/". That request skips this rule and falls to {via}, so it runs '
+                            f"without the required authentication (an anonymous user reaches the handler, which "
+                            f"usually fails with a 500 on the missing user, or exposes data).",
+                            f'Use mvcMatchers("{path}") (it matches what Spring MVC matches), or add "{path}/" to '
+                            f"the rule, or turn off trailing-slash matching.", confidence="verify")
+
+    # QC33 — Location built from a bare path while a context path is set
+    context_path = next((v for key in ("server.servlet.context-path", "spring.mvc.servlet.path")
+                         for v, _ in bases.get(key, []) if v.strip("/'\" ")), None)
+    if context_path and not webflux:
+        loc = re.compile(r"(?:\.created|setLocation|\.location|header\s*\(\s*(?:HttpHeaders\.LOCATION|\"Location\")\s*,)"
+                         r"\s*\(?\s*(?:URI\.create\s*\(\s*\"/|new\s+URI\s*\(\s*\"/|URI\s*\(\s*\"/|UriComponentsBuilder\s*\."
+                         r"\s*(?:newInstance\s*\(\s*\)\s*\.\s*path|fromPath)\s*\(\s*\"/)")
+        for x in controllers:
+            hits = [m for m in loc.finditer(x.text)]
+            if hits:
+                rep.add("QC33", "warning", x.rel, x.line(hits[0].start()),
+                        f"{len(hits)} Location header{'s' if len(hits) > 1 else ''} built from a path starting at '/', "
+                        f"but the app runs under the context path {context_path.strip()}: clients following "
+                        f"{'them' if len(hits) > 1 else 'it'} get a 404.",
+                        "Build it from the request: ServletUriComponentsBuilder.fromCurrentContextPath() or "
+                        "fromCurrentRequest().path(\"/{id}\"), or inject a UriComponentsBuilder parameter.")
+
+    # QC34 — 204 No Content with a body
+    for x in controllers:
+        hits = []
+        for m in re.finditer(r"new\s+ResponseEntity\s*(?:<[^>]*>)?\s*", x.text):
+            args, _ = balanced_args(x.text, m.end())
+            parts = split_top(args[1:-1]) if args.startswith("(") else split_top(args)
+            if len(parts) >= 2 and re.search(r"NO_CONTENT", parts[-1]) and not re.search(
+                    r"(?i)headers|HttpStatus|null", parts[0]):
+                hits.append(m)
+        hits += list(re.finditer(r"status\s*\(\s*HttpStatus\.NO_CONTENT\s*\)\s*\.\s*body\s*\(", x.text))
+        if hits:
+            hits.sort(key=lambda m: m.start())
+            rep.add("QC34", "warning", x.rel, x.line(hits[0].start()),
+                    f"{len(hits)} response{'s' if len(hits) > 1 else ''} with status 204 No Content and a body: "
+                    f"a 204 can't carry one, so the server drops it and clients expecting the updated resource "
+                    f"get nothing.",
+                    "Return 200 with the body, or 204 without one — whichever the API documents.")
+    for h in handlers:
+        rt = raw_type(h.return_type or "")
+        if re.search(r"HttpStatus\.NO_CONTENT|NO_CONTENT\b", h.annos or "") and "ResponseStatus" in (h.annos or "") \
+                and rt not in ("void", "Void", "Unit", "", "ResponseEntity", "Mono", "Flux") \
+                and not re.search(r"Mono<\s*Void|Mono<\s*Unit", h.return_type or ""):
+            rep.add("QC34", "warning", h.src.rel, h.line,
+                    f"@ResponseStatus(NO_CONTENT) on a handler that returns {h.return_type}: the body is dropped.",
+                    "Return void, or use 200 if clients need the body.", endpoint=h.label())
+
+    # QC35 — an empty collection answered with 404
+    for x in controllers:
+        hits = []
+        for m in re.finditer(r"if\s*\(\s*(\w+)\.isEmpty\(\)\s*\)\s*\{?\s*(?:return\s+(?:new\s+ResponseEntity\s*(?:<[^>]*>)?\s*\(\s*"
+                             r"HttpStatus\.NOT_FOUND|ResponseEntity\s*\.\s*(?:notFound\s*\(|status\s*\(\s*HttpStatus\.NOT_FOUND))"
+                             r"|throw\s+(?:new\s+)?\w*NotFound\w*)", x.text):
+            var = re.escape(m.group(1))
+            before = x.text[max(0, m.start() - 1500):m.start()]
+            if re.search(r"\b(?:List|Collection|Set|Iterable|Page|ArrayList|LinkedList|HashSet)\s*<[^;=(){}]*>\s+" + var + r"\s*=",
+                         before) or re.search(r"\b(?:val|var)\s+" + var + r"\s*:\s*(?:Mutable)?(?:List|Collection|Set)<", before):
+                hits.append(m)
+        if hits:
+            rep.add("QC35", "warning", x.rel, x.line(hits[0].start()),
+                    f"{len(hits)} handler{'s' if len(hits) > 1 else ''} answer{'s' if len(hits) == 1 else ''} an empty "
+                    f"collection with 404. An empty list or a search with no matches is a successful answer: clients "
+                    f"get an error they must special-case, and a 404 suggests the URL itself is wrong.",
+                    "Return 200 with [] (404 is for a single resource that doesn't exist).")
 
     # QC16 — not-found handling
     for s in sources:

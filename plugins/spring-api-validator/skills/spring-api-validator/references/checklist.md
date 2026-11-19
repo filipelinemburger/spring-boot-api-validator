@@ -9,6 +9,7 @@ One line per check: what to look for → what happens at runtime → default sev
 - PUT on a collection that creates, or a PUT that isn't idempotent → **E**. PATCH that copies every field (absent → null) → data loss **E**. PUT that merges non-null fields → W (it's PATCH).
 - POST used to read, POST/GET to update or delete a known resource, verb in path (`/getX`, `/deleteX`) → W. Body on GET/DELETE → W.
 - Legit, don't flag: action sub-resources via POST (`/orders/{id}/cancel`), POST search with structured criteria, client-id upsert via PUT, soft delete via DELETE, batch POST.
+- A 204 can't carry a body (`new ResponseEntity<>(dto, NO_CONTENT)` → the client gets nothing) → W. `Location` built from `"/…"` ignores the context path → W.
 - Statuses: create → 201 + `Location`; DELETE → 204; missing single resource → 404 (not 200 null/empty, not 500); empty collection → 200 `[]`; conflict → 409. Plain return = 200 unless `@ResponseStatus`/`ResponseEntity`.
 - Non-idempotent action with read-check-write and no `@Version`/lock/unique constraint → double submit runs twice → W (likely). A "complete" step that doesn't re-check the world still matches the stored offer (seller still owns item) → **E** if money moves. Acknowledge working sequential guards (status check → 409).
 
@@ -42,6 +43,7 @@ One line per check: what to look for → what happens at runtime → default sev
 - Custom exceptions without `@ResponseStatus`/advice mapping → 500. `DataIntegrityViolationException` → 500 (should be 409/400).
 - One error format: check the advice covers framework exceptions (missing param, type mismatch, unreadable body, method validation) or extends `ResponseEntityExceptionHandler`. A catch-all turning 4xx into 500 → **E**. Stack traces/internal messages in bodies → **E**.
 - `ResponseStatusException` gives ProblemDetail only with `spring.mvc.problemdetails.enabled` or a matching advice; otherwise Boot's `/error` body without the reason.
+- Spring Security 5 (Boot 2.x) `antMatchers("/x").authenticated()` doesn't match `/x/`, which Spring MVC still serves — if a broader rule permits it (`/parent/**` permitAll), the slash variant skips authentication **E** (use `mvcMatchers`).
 - App-wide, once: stateless token filter + `/error` not permitted → unhandled errors reach clients as 401 (check what the client does on 401) **E** (likely; confirm against a running server, not MockMvc).
 - `Page<T>` returned directly → unstable JSON (warning on Spring Data 3.3+) S/W. Unbounded `findAll()` lists W.
 

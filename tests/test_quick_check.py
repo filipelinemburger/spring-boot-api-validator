@@ -282,5 +282,92 @@ class DiffScopeTest(unittest.TestCase):
             self.assertEqual(bad.returncode, 2)
 
 
+
+POM = """<project><parent><groupId>org.springframework.boot</groupId>
+<artifactId>spring-boot-starter-parent</artifactId><version>{boot}</version></parent>
+<dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency>{extra}</dependencies></project>"""
+
+
+def scan(files, boot="3.3.5", extra=""):
+    """Run the checker on a throwaway project: {relative path under src/main: content}."""
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "pom.xml"), "w") as fh:
+            fh.write(POM.format(boot=boot, extra=extra))
+        for rel, text in files.items():
+            path = os.path.join(tmp, "src", "main", rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as fh:
+                fh.write(text)
+        return quick_check.run_checks(tmp)[1]
+
+
+def only(findings, rule):
+    return [f for f in findings if f["rule"] == rule]
+
+
+CTRL = "package x;\nimport org.springframework.web.bind.annotation.*;\nimport org.springframework.http.*;\nimport java.util.*;\nimport java.net.URI;\n@RestController\n@RequestMapping(\"/api/things\")\nclass ThingController {{\n{body}\n}}\n"
+
+
+class RealProjectPatternsTest(unittest.TestCase):
+    """QC31–QC35 come from defects confirmed in spring-petclinic-rest and the RealWorld example app."""
+
+    def test_qc31_catch_all_handler(self):
+        advice = ("package x;\nimport org.springframework.http.*;\nimport org.springframework.web.bind.annotation.*;\n"
+                  "@ControllerAdvice\npublic class Errors {{\n  @ExceptionHandler({exc}.class)\n"
+                  "  public ResponseEntity<String> any(Exception e) {{ return new ResponseEntity<>(\"x\", "
+                  "HttpStatus.INTERNAL_SERVER_ERROR); }}\n}}\n")
+        hit = only(scan({"java/x/Errors.java": advice.format(exc="Exception")}), "QC31")
+        self.assertEqual(len(hit), 1)
+        self.assertEqual(hit[0]["severity"], "error")
+        self.assertIn("malformed or unreadable JSON", hit[0]["message"])
+        self.assertFalse(only(scan({"java/x/Errors.java": advice.format(exc="NotFoundException")}), "QC31"))
+        extending = advice.format(exc="Exception").replace(
+            "public class Errors {", "public class Errors extends ResponseEntityExceptionHandler {")
+        self.assertFalse(only(scan({"java/x/Errors.java": extending}), "QC31"))
+
+    def test_qc32_ant_matchers_trailing_slash(self):
+        config = ("package x;\nclass Sec {\n void c(HttpSecurity http) throws Exception {\n http.authorizeRequests()\n"
+                  "  .antMatchers(HttpMethod.GET, \"/articles/feed\").authenticated()\n"
+                  "  .antMatchers(HttpMethod.GET, \"/articles/**\", \"/tags\").permitAll()\n"
+                  "  .anyRequest().authenticated();\n }\n}\n")
+        hit = only(scan({"java/x/Sec.java": config}, boot="2.6.3"), "QC32")
+        self.assertEqual(len(hit), 1)
+        self.assertIn('"/articles/feed/"', hit[0]["message"])
+        self.assertFalse(only(scan({"java/x/Sec.java": config}, boot="3.3.5"), "QC32"))  # trailing slash off in 6.x
+        narrow = config.replace('"/articles/**", ', "")  # nothing broader lets the slash variant through
+        self.assertFalse(only(scan({"java/x/Sec.java": narrow}, boot="2.6.3"), "QC32"))
+
+    def test_qc33_location_without_context_path(self):
+        body = ('  @PostMapping ResponseEntity<String> create() {\n'
+                '    return ResponseEntity.created(URI.create("/api/things/1")).body("x"); }')
+        files = {"java/x/ThingController.java": CTRL.format(body=body)}
+        hit = only(scan({**files, "resources/application.properties": "server.servlet.context-path=/shop\n"}), "QC33")
+        self.assertEqual(len(hit), 1)
+        self.assertIn("/shop", hit[0]["message"])
+        self.assertFalse(only(scan(files), "QC33"))  # no context path: the bare path is right
+        built = body.replace('URI.create("/api/things/1")',
+                             'ServletUriComponentsBuilder.fromCurrentRequest().path("/1").build().toUri()')
+        self.assertFalse(only(scan({"java/x/ThingController.java": CTRL.format(body=built),
+                                    "resources/application.properties": "server.servlet.context-path=/shop\n"}), "QC33"))
+
+    def test_qc34_no_content_with_body(self):
+        def body(ret):
+            return f'  @PutMapping("/{{id}}") ResponseEntity<String> update() {{ String dto = "x";\n    return {ret}; }}'
+        self.assertEqual(len(only(scan({"java/x/ThingController.java": CTRL.format(
+            body=body("new ResponseEntity<>(dto, HttpStatus.NO_CONTENT)"))}), "QC34")), 1)
+        self.assertEqual(len(only(scan({"java/x/ThingController.java": CTRL.format(
+            body=body("ResponseEntity.status(HttpStatus.NO_CONTENT).body(dto)"))}), "QC34")), 1)
+        for fine in ("new ResponseEntity<>(HttpStatus.NO_CONTENT)", "new ResponseEntity<>(headers, HttpStatus.NO_CONTENT)",
+                     "new ResponseEntity<>(dto, HttpStatus.OK)", "ResponseEntity.noContent().build()"):
+            self.assertFalse(only(scan({"java/x/ThingController.java": CTRL.format(body=body(fine))}), "QC34"), fine)
+
+    def test_qc35_empty_collection_404(self):
+        listing = ('  @GetMapping ResponseEntity<List<String>> all() {\n    List<String> things = new ArrayList<>();\n'
+                   '    if (things.isEmpty()) {\n      return new ResponseEntity<>(HttpStatus.NOT_FOUND);\n    }\n'
+                   '    return ResponseEntity.ok(things); }')
+        self.assertEqual(len(only(scan({"java/x/ThingController.java": CTRL.format(body=listing)}), "QC35")), 1)
+        single = listing.replace("List<String> things = new ArrayList<>();", "Optional<String> things = Optional.empty();")
+        self.assertFalse(only(scan({"java/x/ThingController.java": CTRL.format(body=single)}), "QC35"))
+
 if __name__ == "__main__":
     unittest.main()
