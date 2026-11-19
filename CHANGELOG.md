@@ -2,6 +2,10 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
+## Unreleased
+### Added
+- Trigger test prompts (`tests/trigger_prompts.json`): 23 that should load the skill and 22 close calls that shouldn't. The current description loads it on all 23 and on none of the 22, so it is unchanged.
+
 ## 0.11.1 — 2026-11-19
 ### Fixed
 Precision sweep of the checker over 13 public Spring Boot projects (about 1,370 Java/Kotlin files, Boot 2.0–4.1, Java and Kotlin, MVC and WebFlux, single- and multi-module; no crashes, 2.6 s on the largest). Before: 95 findings, 11 false. After: 91, none known false.

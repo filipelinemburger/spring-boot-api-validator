@@ -1,0 +1,182 @@
+[
+ {
+  "query": "can you look over OrderController and the request classes before I open the PR? just want to make sure the endpoints and validation are sane",
+  "should_trigger": true
+ },
+ {
+  "query": "we're adding PATCH /api/v2/customers/{id} in customer-service (spring boot 3.2). does my CustomerPatchDto handle partial updates properly or will null fields wipe existing data?",
+  "should_trigger": true
+ },
+ {
+  "query": "QA found that POST /bookings returns 200 instead of 201, and a bad date gives a 500 with a stack trace in the body. Can you go through the booking module's controllers and find everything else like that?",
+  "should_trigger": true
+ },
+ {
+  "query": "kotlin + webflux app, routes are in RouterConfig.kt with coRouter. I have a feeling the handlers never validate the request body. can you check the api layer?",
+  "should_trigger": true
+ },
+ {
+  "query": "is it bad that DELETE /users/{id} returns the deleted user and GET /users?active=true binds to a primitive boolean? do a pass over UserController and tell me what else is off",
+  "should_trigger": true
+ },
+ {
+  "query": "review branch feature/invoice-endpoints against main, only the REST changes in invoicing-api. flag anything wrong with status codes, DTOs or error handling",
+  "should_trigger": true
+ },
+ {
+  "query": "our team has API guidelines in docs/api-guidelines.md (plural nouns, kebab-case paths, problem+json errors). check that the controllers under src/main/java/com/acme/catalog actually follow them",
+  "should_trigger": true
+ },
+ {
+  "query": "src/main/resources/openapi.yaml says required: [sku, quantity] for the order line but I don't think the Java class enforces that. compare the spec with what the spring controllers really do",
+  "should_trigger": true
+ },
+ {
+  "query": "sanity check pls: @RestController @RequestMapping(\"/api/accounts\"), update is a PUT that only changes the email, and getAccount throws EntityNotFoundException when the id doesn't exist. what status does the client get and is this good practice?",
+  "should_trigger": true
+ },
+ {
+  "query": "i inherited a spring boot 2.7 service with ~30 endpoints. before we migrate to boot 3 i want a list of every api problem: wrong verbs, missing @Valid, exception handlers that turn bad input into 500s",
+  "should_trigger": true
+ },
+ {
+  "query": "pode revisar os endpoints desse projeto spring boot? acho que o PUT /produtos/{id} está fazendo atualização parcial e alguns status codes estão errados",
+  "should_trigger": true
+ },
+ {
+  "query": "just committed the new /api/orders/{id}/cancel endpoint, see git diff HEAD~1. anything I should fix before the team sees it?",
+  "should_trigger": true
+ },
+ {
+  "query": "take a look at src/main/java/com/acme/orders and tell me if this API is production ready",
+  "should_trigger": true
+ },
+ {
+  "query": "code review please - the changes on this branch touch OrderController, OrderRequest and GlobalExceptionHandler",
+  "should_trigger": true
+ },
+ {
+  "query": "frontend team says our spring API is inconsistent: some errors come back as {error: ...}, some as spring's default json, and a few endpoints return 200 on failure. go through it and list what to fix",
+  "should_trigger": true
+ },
+ {
+  "query": "OrderRequest has a List<OrderLine> lines with @NotEmpty, and OrderLine has @Positive quantity. will the quantity actually get validated when someone posts an order? check the other request classes for the same thing",
+  "should_trigger": true
+ },
+ {
+  "query": "We're about to open this service's API to partners. Do a thorough pass over the endpoints: naming, versioning, pagination, error format.",
+  "should_trigger": true
+ },
+ {
+  "query": "my reactive controller returns Mono<ResponseEntity<Order>> and when the order isn't found the client gets 200 with an empty body. is the rest of the webflux api doing the same? give me a fix list",
+  "should_trigger": true
+ },
+ {
+  "query": "lint the rest layer",
+  "should_trigger": true
+ },
+ {
+  "query": "Kotlin Spring Boot: data class CreateUserRequest(val age: Int, @field:NotBlank val name: String). what happens when the client leaves out age? check the other request classes too",
+  "should_trigger": true
+ },
+ {
+  "query": "any obvious problems with how our controllers take ids and query params? we use @RequestParam Integer page with no default all over the place",
+  "should_trigger": true
+ },
+ {
+  "query": "revisa a API REST do order-service e me diz o que está errado com os verbos HTTP e com a validação",
+  "should_trigger": true
+ },
+ {
+  "query": "before I merge the PR that adds POST /products/import (bulk upload, spring boot 3.3) I'd like a second opinion on the endpoint design and the error handling",
+  "should_trigger": true
+ },
+ {
+  "query": "my spring boot app won't start: 'Parameter 0 of constructor in OrderService required a bean of type OrderRepository that could not be found'. how do I fix it?",
+  "should_trigger": false
+ },
+ {
+  "query": "write JUnit 5 + MockMvc tests for GET /orders/{id} in OrderController: happy path, not found, and a non-numeric id",
+  "should_trigger": false
+ },
+ {
+  "query": "the JPA query in ReportRepository does N+1 selects when it loads orders with their items. how do I write a fetch join with spring data for this?",
+  "should_trigger": false
+ },
+ {
+  "query": "set up spring security 6 with JWT for our boot 3 app: a filter that reads the bearer token, and permit /auth/** without a token",
+  "should_trigger": false
+ },
+ {
+  "query": "review this Express router for REST best practices: app.post('/users/:id/delete', ...) and app.get('/createOrder', ...). the status codes feel random too",
+  "should_trigger": false
+ },
+ {
+  "query": "can you review the endpoints in app/routers/orders.py? it's FastAPI with pydantic models and I think the status codes and validation are off",
+  "should_trigger": false
+ },
+ {
+  "query": "our Spring Batch job that imports CSV invoices silently skips rows. can you review the ItemProcessor and the skip policy in InvoiceImportJobConfig?",
+  "should_trigger": false
+ },
+ {
+  "query": "generate an openapi.yaml from our spring controllers with springdoc and serve swagger-ui at /docs",
+  "should_trigger": false
+ },
+ {
+  "query": "how do I configure Jackson globally in spring boot so LocalDateTime serializes as an ISO string instead of an array of numbers?",
+  "should_trigger": false
+ },
+ {
+  "query": "do a security review of the login flow in this spring app: password hashing, session fixation and the remember-me cookie",
+  "should_trigger": false
+ },
+ {
+  "query": "move the business logic out of OrderController into a service class and make the controller thin, keep the same endpoints",
+  "should_trigger": false
+ },
+ {
+  "query": "review the changes on this branch: it's the Kafka consumer for order events plus the retry and DLQ config",
+  "should_trigger": false
+ },
+ {
+  "query": "add bean validation to OrderRequest: quantity must be positive and sku can't be blank",
+  "should_trigger": false
+ },
+ {
+  "query": "create a REST controller for Invoice with CRUD endpoints, request/response DTOs and a service layer, spring boot 3",
+  "should_trigger": false
+ },
+ {
+  "query": "spring cloud gateway: I want /api/orders/** routed to order-service with the /api prefix stripped, but my application.yml route isn't matching anything",
+  "should_trigger": false
+ },
+ {
+  "query": "why does GET /orders/{id} return 401 even though I send a valid bearer token? spring security 6, resource server config",
+  "should_trigger": false
+ },
+ {
+  "query": "review the GraphQL schema and the @QueryMapping / @SchemaMapping resolvers in this spring app for N+1 problems",
+  "should_trigger": false
+ },
+ {
+  "query": "explain the difference between PUT and PATCH, and when an API should return 204 instead of 200",
+  "should_trigger": false
+ },
+ {
+  "query": "p99 latency on GET /orders is around 2s in production. what should I profile in this spring boot app and how?",
+  "should_trigger": false
+ },
+ {
+  "query": "upgrade this project from spring boot 2.7 to 3.3: javax to jakarta, the security config, whatever else breaks",
+  "should_trigger": false
+ },
+ {
+  "query": "write a .http file that calls every endpoint in OrderController with example bodies so I can try them in IntelliJ",
+  "should_trigger": false
+ },
+ {
+  "query": "review this NestJS controller: @Post() create(@Body() dto: CreateOrderDto) returns the entity directly and there's no ValidationPipe anywhere",
+  "should_trigger": false
+ }
+]
