@@ -190,7 +190,8 @@ def read_base_paths(root):
                 continue
             full = os.path.join(dirpath, fn)
             try:
-                text = open(full, encoding="utf-8", errors="replace").read()
+                with open(full, encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
             except OSError:
                 continue
             rel = os.path.relpath(full, root)
@@ -212,7 +213,8 @@ def read_base_paths(root):
 
 def scan_file(path, root):
     try:
-        raw = open(path, encoding="utf-8", errors="replace").read()
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            raw = fh.read()
     except OSError:
         return []
     if not MAPPING_RE.search(raw):

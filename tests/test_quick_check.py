@@ -7,6 +7,7 @@ parts of the apps stay quiet (precision), so rule changes can't silently break d
 import collections
 import os
 import sys
+import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -85,6 +86,33 @@ class QuickCheckTest(unittest.TestCase):
         self.assertEqual(len(at(f, "QC14", "ProductController.java")), 2)
         self.assertTrue(all(x["severity"] == "warning" for x in at(f, "QC14", "ProductController.java")))
         self.assertTrue(at(f, "QC24", "CategoryHandler.java"))
+
+    def test_cascade_into_shared_rows(self):
+        f = check("recipes-shared-cascade")
+        flagged = sorted(x["file"].split("/")[-1] for x in f if x["rule"] == "QC30")
+        self.assertEqual(flagged, ["Cookbook.java", "Recipe.java"])  # not Author.recipes (a composition)
+        self.assertTrue(all(x["severity"] == "error" for x in f if x["rule"] == "QC30"))
+        # no other test app maps a cascade removal onto shared rows
+        for case in sorted(os.listdir(EVALS)):
+            if case != "recipes-shared-cascade" and os.path.isdir(os.path.join(EVALS, case, "files")):
+                self.assertNotIn("QC30", rules(check(case)), case)
+
+    def test_cascade_rule_reads_kotlin_and_remove(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, "src", "main", "kotlin", "x")
+            os.makedirs(pkg)
+            with open(os.path.join(tmp, "build.gradle.kts"), "w") as fh:
+                fh.write('plugins { id("org.springframework.boot") version "3.3.5" }\n')
+            with open(os.path.join(pkg, "Book.kt"), "w") as fh:
+                fh.write("package x\n\nimport jakarta.persistence.*\n\n@Entity\nclass Book(\n"
+                         "    @Id val id: Long = 0,\n"
+                         "    @ManyToOne(cascade = [CascadeType.PERSIST, CascadeType.REMOVE]) val genre: Genre,\n"
+                         "    @ManyToOne(cascade = [CascadeType.PERSIST]) val shelf: Shelf,\n)\n")
+            _, findings = quick_check.run_checks(tmp)
+        qc30 = [x for x in findings if x["rule"] == "QC30"]
+        self.assertEqual(len(qc30), 1)
+        self.assertIn("Book.genre", qc30[0]["message"])
+        self.assertEqual(qc30[0]["severity"], "warning")  # nothing deletes a Book yet
 
     def test_pattern_max_length(self):
         m = quick_check.pattern_max_length

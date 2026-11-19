@@ -2,6 +2,15 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
+## 0.10.0 — 2026-11-19
+### Added
+- Quick-check rule **QC30 cascade-to-shared-entity**: `cascade = ALL`/`REMOVE` on a `@ManyToOne` or `@ManyToMany` (Java and Kotlin), an Error when something in the code deletes those entities. Removing one row then removes the shared row it points to — with `ON DELETE CASCADE` in the schema, other users' data goes with it.
+- The skill's checklist and `structure.md` follow what a DELETE really removes through the mappings and the DDL.
+- Test app `recipes-shared-cascade`.
+- Measured on three real open-source projects (spring-petclinic-rest, the RealWorld Java and Kotlin/WebFlux examples), every finding checked against the code: no false findings either way; the skill mis-ranked 1 finding against 7 without it, and alone found the most severe bug — in spring-petclinic-rest, `Pet.type` is `cascade = ALL`, so deleting an owner deletes other owners' pets on the default H2 schema.
+### Fixed
+- The checker closes the files it reads.
+
 ## 0.9.1 — 2026-11-18
 ### Fixed
 - Dates: Spring falls back to ISO parsing for `java.time` parameters since **6.0** (Boot 3.0), not 6.1. The skill and the checker's QC14 now say so (QC14 is a Suggestion from Boot 3.0).

@@ -81,6 +81,7 @@ Add `.api-validator.md` at the repository root to describe your conventions (pat
 | QC20 | Request fields that allow longer strings or larger numbers than the database column they end up in — limits read from Flyway/SQL migrations (in order, including later `ALTER`/`RENAME`), Liquibase XML and `@Column`, including money copied into a narrower column elsewhere |
 | QC21–QC24 | WebFlux and functional endpoints: functional handlers that read a constrained body without validating it; `block()` in a WebFlux app; lookups that return an empty `Mono` (or a Kotlin `null`) as 200 instead of 404; exceptions mapped in `@ControllerAdvice` but thrown from functional routes the advice doesn't cover (WebFlux on Spring 5, or advice scoped by package/type) |
 | QC25–QC29 | OpenAPI contract drift: documented operations with no handler (and undocumented handlers); documented success statuses the handler doesn't return; documented-required fields the DTO doesn't enforce; property names/types that differ between the spec schema and the DTO's JSON; springdoc `@ApiResponse`/`@Schema(required)` that contradict the code. Reads OpenAPI 3 and Swagger 2, YAML or JSON |
+| QC30 | Deletes that reach shared rows: `cascade = ALL`/`REMOVE` on a `@ManyToOne` or `@ManyToMany` removes the type, category or tag other records still use — with `ON DELETE CASCADE` in the schema that silently deletes other users' data, otherwise the delete fails. Found in spring-petclinic-rest, where deleting one owner deletes other owners' pets |
 
 ```bash
 python3 checker/quick_check.py <project-root>
@@ -117,12 +118,13 @@ The skill itself is a standard Agent Skill folder — [`plugins/spring-api-valid
 
 ## Development
 
-- `evals/` holds twelve test cases — small Spring apps with planted defects and one grader file per expected finding:
+- `evals/` holds thirteen test cases — small Spring apps with planted defects and one grader file per expected finding:
   - `full-audit-order-service`, `http-verbs-user-service`, `project-rules-boot2-catalog`: a full audit, an HTTP-verb review, and a Boot 2.7 app with team rules;
   - `boot4-jwt-error-dispatch`, `managed-club-ownership`, `double-accept-transfers`: lessons from a real-app review — errors surfacing as 401 in a stateless JWT setup on Boot 4, writes allowed on clubs the user doesn't manage, and a counter offer that can be paid twice;
   - `kotlin-books-api`, `webflux-shop-api`: Kotlin + Spring MVC, and WebFlux with functional routes;
   - `openapi-drift-orders`: a published OpenAPI spec that has drifted from the code;
-  - `warehouse-readonly-traps`, `clinic-method-security`, `webflux-boot27-catalog`: version and proxy traps with decoys — a GET that saves through dirty checking next to a read-only one that doesn't, leftover `javax` constraints and a class-level `@Validated` on Boot 3.2, a `@PreAuthorize` skipped by a self-call next to one that works, and a Boot 2.7 WebFlux app where advice, parameter constraints and ISO dates behave as they did before Spring 6.
+  - `warehouse-readonly-traps`, `clinic-method-security`, `webflux-boot27-catalog`: version and proxy traps with decoys — a GET that saves through dirty checking next to a read-only one that doesn't, leftover `javax` constraints and a class-level `@Validated` on Boot 3.2, a `@PreAuthorize` skipped by a self-call next to one that works, and a Boot 2.7 WebFlux app where advice, parameter constraints and ISO dates behave as they did before Spring 6;
+  - `recipes-shared-cascade`: deletes that cascade into shared reference data (a cuisine, other authors' recipes in a cookbook), modelled on a bug the skill found in spring-petclinic-rest.
   Every case also checks precision: that no finding makes a materially wrong claim, that working guards are acknowledged, and that latent issues aren't over-rated.
   They live outside the plugin folder, so they aren't shipped to users. Run them with `claude plugin eval plugins/spring-api-validator --eval-dir evals --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
 - Validate before publishing: `claude plugin validate . --strict`.

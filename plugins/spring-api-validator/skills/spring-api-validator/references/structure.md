@@ -36,6 +36,12 @@ For every id a handler accepts, follow it into the service and confirm it is sco
 - **"Belongs to" vs "may act on"**: in a write path, being inside the caller's scope may not be enough. If the domain distinguishes the thing the user controls (their managed club, their own account, their team) from other things in the same scope, writes must check the narrower one. Compare with sibling services: if one write path checks it and another doesn't, the gap is an Error.
 - Tokens for deleted users: if the token filter trusts the signature alone, a deleted account keeps working until expiry (Warning).
 
+## What a delete removes
+Follow every DELETE (and every service method that removes entities) through the JPA mappings and the DDL. `cascade = CascadeType.ALL` or `REMOVE` on a `@ManyToOne` or `@ManyToMany` removes the *shared* side — a pet type, a category, a specialty — that other records still reference:
+- with `ON DELETE CASCADE` on those foreign keys (common in `schema.sql`), the database then deletes every other record that used it: deleting one owner removes other owners' pets. Silent cross-user data loss → Error.
+- without it, the flush fails with a constraint violation, so records sharing that row can't be deleted at all (500, or whatever the advice maps `DataIntegrityViolationException` to) → Error.
+Cascade removal belongs on compositions: `@OneToMany(mappedBy = …, cascade = ALL, orphanRemoval = true)` from an owner to its own pets is correct. Name the schema file and the mapping in the finding; the effect depends on both.
+
 ## Same rule on every path
 
 When several endpoints do the same kind of thing (add a player to a squad, move money, change a status), check they all enforce the same business rules (caps, funds, state checks). A rule enforced on four paths and missing on the fifth is a Warning; name the paths that do enforce it.

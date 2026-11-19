@@ -96,6 +96,7 @@ RULES = {
     "QC27": ("spec-status-drift", "Success status in the spec differs from what the handler returns"),
     "QC28": ("spec-schema-drift", "Property names or types differ between the spec schema and the DTO's JSON"),
     "QC29": ("annotation-doc-drift", "springdoc annotations (@ApiResponse, @Schema required) contradict the code"),
+    "QC30": ("cascade-to-shared-entity", "cascade = ALL/REMOVE on a @ManyToOne or @ManyToMany: deleting one row deletes rows others still use"),
     "QC24": ("advice-skips-functional-routes", "Exception mapped in @ControllerAdvice is thrown from a functional route the advice doesn't cover (WebFlux on Spring 5, or advice scoped by package/type)"),
 }
 
@@ -1387,6 +1388,31 @@ def run_checks(root, only=None, skip=None):
                         f"{t.name}.{f.name} is documented as required (@Schema) but nothing enforces it, so the "
                         f"generated docs promise a check the API doesn't make.",
                         "Add @NotNull/@NotBlank (and @Valid on the body), or drop the required flag.")
+
+    # QC30 — cascading removal into the "one" side of a many-to-one (or across a many-to-many)
+    deletes = any("DELETE" in h.verbs for h in handlers) or any(
+        re.search(r"\.(?:delete|deleteById|deleteAll|deleteAllById|remove)\s*\(", s.text) for s in sources)
+    for t in types.values():
+        if not t.is_entity:
+            continue
+        for f in t.fields:
+            for kind in ("ManyToOne", "ManyToMany"):
+                a = f.anno(kind)
+                cm = re.search(r"\bcascade\s*=\s*[\[{]?[^)]*?\b(?:CascadeType\.)?(ALL|REMOVE)\b", a[1]) if a else None
+                if not cm:
+                    continue
+                target = re.sub(r".*<\s*([\w.]+)\s*>.*", r"\1", f.type).split(".")[-1].rstrip("?")
+                what = (f"the {target} it points to, which every other {t.name} that uses it still references"
+                        if kind == "ManyToOne" else
+                        f"every {target} in {f.name}, though other rows (and other {t.name}s) can still use them")
+                rep.add("QC30", "error" if deletes else "warning", t.src.rel, f.line,
+                        f"{t.name}.{f.name} is @{kind} with cascade {cm.group(1)}: removing a {t.name} also removes "
+                        f"{what}. Depending on the foreign keys, the delete fails (constraint violation: a 500 or "
+                        f"whatever the advice maps it to) or silently deletes the other rows too (ON DELETE CASCADE)."
+                        + ("" if deletes else " No delete was found in the code, so this matters once something "
+                           f"removes a {t.name}."),
+                        f"Drop REMOVE/ALL from the cascade on {t.name}.{f.name} (keep PERSIST/MERGE if needed); "
+                        f"cascade removal belongs on compositions (@OneToMany/@OneToOne to rows only this one owns).")
 
     # QC16 — not-found handling
     for s in sources:

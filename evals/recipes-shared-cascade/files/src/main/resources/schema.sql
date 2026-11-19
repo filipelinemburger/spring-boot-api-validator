@@ -1,0 +1,30 @@
+CREATE TABLE IF NOT EXISTS authors (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    subject      VARCHAR(64)  NOT NULL UNIQUE,
+    display_name VARCHAR(80)  NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cuisines (
+    id   BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(40) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS recipes (
+    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    title      VARCHAR(120)  NOT NULL,
+    body       VARCHAR(8000) NOT NULL,
+    author_id  BIGINT NOT NULL REFERENCES authors (id) ON DELETE CASCADE,
+    cuisine_id BIGINT NOT NULL REFERENCES cuisines (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cookbooks (
+    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name      VARCHAR(80) NOT NULL,
+    owner_id  BIGINT NOT NULL REFERENCES authors (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cookbook_recipes (
+    cookbook_id BIGINT NOT NULL REFERENCES cookbooks (id) ON DELETE CASCADE,
+    recipe_id   BIGINT NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
+    PRIMARY KEY (cookbook_id, recipe_id)
+);

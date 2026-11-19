@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: recipes-shared-cascade
+expected_outcome: |
+  review.md flags that Recipe.cuisine is @ManyToOne(cascade = ALL), so deleting a recipe removes its shared Cuisine and schema.sql's ON DELETE CASCADE then deletes every other author's recipes of that cuisine; and that Cookbook.recipes is @ManyToMany(cascade = ALL), so deleting a personal cookbook deletes the saved recipes, including other authors'. It does not treat Author.recipes (a composition with orphanRemoval) as a defect in itself, and doesn't claim the delete endpoints lack ownership checks.
+context:
+  scaffold_script: place-files.sh

@@ -48,6 +48,7 @@ One line per check: what to look for → what happens at runtime → default sev
 ## Structure, ownership, consistency  (→ structure.md)
 - Every id in path/body scoped to the caller: top-level `requireOwned`, children filtered by parent. "Belongs to the user's scope" vs "may act on": a write with a weaker check than its siblings (save-level vs managed-club) → **E**.
 - Same business rule on every path that does the same thing (caps, funds, state checks) → missing on one path W.
+- What a DELETE really removes: `cascade = ALL`/`REMOVE` on a `@ManyToOne` or `@ManyToMany` removes the shared row (a type, a category, a specialty) that other records still use → with `ON DELETE CASCADE` in the DDL it silently deletes other users' data, otherwise the delete fails with a constraint error (500 or 404 per the advice) **E**. Check the entity mappings *and* the schema's foreign keys. Cascade removal on `@OneToMany`/`@OneToOne` composition (an owner's own pets) is fine.
 - Controllers doing repository work/transactions → W. Field `@Autowired` → S. `@CrossOrigin("*")` → W. Deleted user's token still valid → W.
 
 ## API contract (OpenAPI/Swagger spec or springdoc annotations)  (→ openapi.md)
