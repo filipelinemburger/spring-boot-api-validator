@@ -369,5 +369,66 @@ class RealProjectPatternsTest(unittest.TestCase):
         single = listing.replace("List<String> things = new ArrayList<>();", "Optional<String> things = Optional.empty();")
         self.assertFalse(only(scan({"java/x/ThingController.java": CTRL.format(body=single)}), "QC35"))
 
+
+ENTITY_HDR = "package x;\nimport jakarta.persistence.*;\nimport jakarta.validation.constraints.*;\n"
+
+
+class SweepFalseAlarmsTest(unittest.TestCase):
+    """Patterns from the 13-project sweep that used to raise false alarms (or hide real ones)."""
+
+    def test_entity_detected_above_annotation_with_braces(self):
+        entity = (ENTITY_HDR + '@Entity\n@JsonIgnoreProperties(value = { "new", "id" })\n'
+                  'public class Tag {\n  @Id Long id;\n  @Size(max = 20) String name;\n}\n')
+        body = '  @PostMapping Tag create(@Valid @RequestBody Tag tag) { return tag; }'
+        f = scan({"java/x/Tag.java": entity, "java/x/ThingController.java": CTRL.format(body=body)})
+        self.assertTrue(only(f, "QC15"))  # bound straight to the entity: seen only if @Entity is read
+
+    def test_entity_graph_is_not_a_request_dto(self):
+        files = {
+            "java/x/Account.java": ENTITY_HDR + "@Entity\npublic class Account {\n  @Id Long id;\n  @ManyToOne Owner owner;\n}\n",
+            "java/x/Owner.java": ENTITY_HDR + ("@Entity\npublic class Owner {\n  @Id Long id;\n  @NotNull boolean active;\n"
+                                               "  @OneToMany java.util.Set<Role> roles;\n}\n"),
+            "java/x/Role.java": "package x;\nimport jakarta.validation.constraints.*;\npublic class Role {\n  @Size(max = 5) String name;\n}\n",
+            "java/x/ThingController.java": CTRL.format(
+                body='  @PostMapping Account create(@Valid @RequestBody Account a) { return a; }'),
+        }
+        f = scan(files)
+        for rule in ("QC04", "QC06", "QC07"):
+            self.assertFalse(only(f, rule), rule)
+
+    def test_boolean_primitive_is_a_suggestion(self):
+        dto = "package x;\npublic class Flags {\n  public boolean remember;\n  public int stars;\n}\n"
+        body = '  @PostMapping String set(@RequestBody Flags flags) { return "x"; }'
+        f = only(scan({"java/x/Flags.java": dto, "java/x/ThingController.java": CTRL.format(body=body)}), "QC07")
+        self.assertEqual(sorted((x["severity"], x["message"].split(" is a primitive")[0].split()[-1]) for x in f),
+                         [("suggestion", "remember"), ("warning", "stars")])
+
+    def test_instant_parameters_parse_iso(self):
+        body = '  @GetMapping List<String> since(@RequestParam java.time.Instant from) { return List.of(); }'
+        self.assertFalse(only(scan({"java/x/ThingController.java": CTRL.format(body=body)}, boot="2.7.18"), "QC14"))
+        dated = body.replace("java.time.Instant", "java.time.LocalDate")
+        self.assertTrue(only(scan({"java/x/ThingController.java": CTRL.format(body=dated)}, boot="2.7.18"), "QC14"))
+
+    def test_guarded_optional_is_not_a_bare_or_else_throw(self):
+        svc = ("package x;\nimport org.springframework.stereotype.Service;\nimport java.util.Optional;\n@Service\n"
+               "class Users {{\n  String check(Optional<String> existing) {{\n{line}\n    return \"ok\";\n  }}\n}}\n")
+        guarded = '    if (existing.isPresent() && !existing.orElseThrow().isBlank()) { throw new IllegalStateException(); }'
+        self.assertFalse(only(scan({"java/x/Users.java": svc.format(line=guarded)}), "QC16"))
+        bare = "    String v = existing.orElseThrow();"
+        self.assertTrue(only(scan({"java/x/Users.java": svc.format(line=bare)}), "QC16"))
+
+    def test_login_password_and_hashed_password_columns(self):
+        login = "package x;\nimport jakarta.validation.constraints.*;\npublic class LoginRequest {\n  @Size(max = 100) public String password;\n}\n"
+        encoder = ("package x;\nimport org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;\n"
+                   "class Enc { Object e = new BCryptPasswordEncoder(); }\n")
+        body = '  @PostMapping String login(@Valid @RequestBody LoginRequest r) { return "t"; }'
+        self.assertFalse(only(scan({"java/x/LoginRequest.java": login, "java/x/Enc.java": encoder,
+                                    "java/x/ThingController.java": CTRL.format(body=body)}), "QC17"))
+        user = ENTITY_HDR + '@Entity\npublic class User {\n  @Id Long id;\n  @Column(name = "password_hash", length = 60) String password;\n}\n'
+        req = "package x;\npublic class UserRequest {\n  public String password;\n}\n"
+        body = '  @PostMapping String create(@RequestBody UserRequest r) { return "x"; }'
+        self.assertFalse(only(scan({"java/x/User.java": user, "java/x/UserRequest.java": req,
+                                    "java/x/ThingController.java": CTRL.format(body=body)}), "QC20"))
+
 if __name__ == "__main__":
     unittest.main()

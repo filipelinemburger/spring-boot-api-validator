@@ -287,6 +287,29 @@ def parse_param_list(src, text, base):
     return fields
 
 
+
+def statement_start(back):
+    """Index of the last ';', '{' or '}' in back that sits outside parentheses and strings (-1 if none).
+
+    Annotation arguments such as @Table(uniqueConstraints = {...}) or @JsonIgnoreProperties({"a"}) contain
+    braces that don't end the previous declaration."""
+    depth, in_str = 0, False
+    for i in range(len(back) - 1, -1, -1):
+        ch = back[i]
+        if in_str:
+            if ch == '"' and (i == 0 or back[i - 1] != "\\"):
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == ")":
+            depth += 1
+        elif ch == "(":
+            depth = max(0, depth - 1)
+        elif ch in ";{}" and depth == 0:
+            return i
+    return -1
+
 def parse_types(src):
     types = []
     text = src.text
@@ -294,7 +317,7 @@ def parse_types(src):
         kind, name = m.group(1), m.group(2)
         # annotations right before the declaration
         back = text[max(0, m.start() - 600):m.start()]
-        cut = max(back.rfind(";"), back.rfind("}"), back.rfind("{"))
+        cut = statement_start(back)
         annos = [a.split(".")[-1] for a in re.findall(r"@([\w.]+)", back[cut + 1:])]
         t = TypeInfo(name, kind, src, src.line(m.start()), set(annos))
         tm = re.search(r'@(?:[\w.]+\.)?Table\s*\(\s*(?:[^)]*?\bname\s*=\s*)?"([^"]+)"', back[cut + 1:])
@@ -852,6 +875,8 @@ def run_checks(root, only=None, skip=None):
         if t.name in reachable or t.kind == "enum":
             continue
         reachable[t.name] = t
+        if t.is_entity:
+            continue  # an entity bound as a body is QC15's finding; don't treat its graph as request DTOs
         for f in t.fields:
             for et in element_types(f.type):
                 u = lookup(et)
@@ -926,10 +951,14 @@ def run_checks(root, only=None, skip=None):
                             f"Bind a request DTO with only the editable fields and map it onto {u.name}.",
                             endpoint=ep)
                 if not valid and constrained_deep(u):
+                    required = any(a[0] in ("NotNull", "NotBlank", "NotEmpty") for f in u.fields for a in f.annotations)
+                    fix = (f"Annotate the parameter: @Valid @RequestBody {p.type} {p.name}."
+                           if not (h.verbs == ["PATCH"] and required) else
+                           f"For a partial update, @Valid on {u.name} would also require its @NotNull fields: validate "
+                           f"the merged entity before saving, or bind a PATCH DTO (or validation group) without them.")
                     rep.add("QC03", "error", rel, p.line,
                             f"{h.name} takes @RequestBody {p.type} without @Valid, so the constraints on {u.name} "
-                            f"never run.", f"Annotate the parameter: @Valid @RequestBody {p.type} {p.name}.",
-                            endpoint=ep)
+                            f"never run: invalid values reach the service and the database.", fix, endpoint=ep)
 
         # QC15 (response side) — collected, reported once per entity below
         for et in element_types(h.return_type) if h.return_type else []:
@@ -972,7 +1001,7 @@ def run_checks(root, only=None, skip=None):
                             f"Name it after the template variable, e.g. @PathVariable(\"{sorted(templates)[0]}\")"
                             if templates else "Add the variable to the mapping path.", endpoint=ep)
             rp = p.anno("RequestParam") or p.anno("PathVariable")
-            if rp is not None and raw_type(p.type) in DATE_TYPES and not p.anno("DateTimeFormat") \
+            if rp is not None and raw_type(p.type) in DATE_TYPES - {"Instant"} and not p.anno("DateTimeFormat") \
                     and not date_format_global:
                 newer = boot is not None and boot >= (3, 0)  # ISO fallback since Spring 6.0
                 rep.add("QC14", "suggestion" if newer else "warning", rel, p.line,
@@ -1040,7 +1069,7 @@ def run_checks(root, only=None, skip=None):
                         "Use a constraint for the type, e.g. @NotNull (plus @Positive/@Min) for numbers, "
                         "@NotBlank only on strings.")
             # QC06
-            if "NotNull" in names and rt in PRIMITIVES:
+            if "NotNull" in names and rt in PRIMITIVES and not t.is_entity:
                 rep.add("QC06", "warning", src.rel, f.line,
                         f"@NotNull on {t.name}.{f.name} ({f.type}) can never fail: a primitive is never null, and "
                         f"a missing JSON value becomes {'false' if rt == 'boolean' else '0'}.",
@@ -1049,7 +1078,7 @@ def run_checks(root, only=None, skip=None):
             # QC07
             if t.name in reachable and not t.is_entity and rt in PRIMITIVES and not src.kotlin \
                     and "NotNull" not in names:
-                rep.add("QC07", "warning", src.rel, f.line,
+                rep.add("QC07", "suggestion" if rt == "boolean" else "warning", src.rel, f.line,
                         f"{t.name} is (part of) a request body and {f.name} is a primitive {f.type}: when a client "
                         f"omits it (or misspells it, since unknown JSON fields are ignored) it silently becomes "
                         f"{'false' if rt == 'boolean' else '0'} and the request goes through with that value.",
@@ -1067,6 +1096,7 @@ def run_checks(root, only=None, skip=None):
                                 f"e.g. List<@Valid {u.name}>.")
             # QC17
             if re.search(r"password", f.name, re.I) and t.name in reachable and rt in STRING_TYPES and \
+                    not re.search(r"Login|Credentials|SignIn|Auth(?:entication)?Request", t.name) and \
                     re.search(r"BCryptPasswordEncoder", "\n".join(s.text for s in sources)):
                 size = f.anno("Size") or f.anno("Length")
                 mx = re.search(r"max\s*=\s*(\d+)", size[1]) if size else None
@@ -1116,6 +1146,8 @@ def run_checks(root, only=None, skip=None):
         if t.is_entity or re.search(r"Login|Search|Filter|Query|Criteria|Lookup|Credentials", t.name):
             continue
         for f in t.fields:
+            if re.search(r"(?i)password|passwd|secret", f.name):
+                continue  # stored as a hash, never as typed
             rt = raw_type(f.type)
             kind = "varchar" if rt in STRING_TYPES else "numeric" if rt in NUMERIC_TYPES else None
             cands = [c for c in column_limits.get(f.name, []) if c[0][0] == kind]
@@ -1580,6 +1612,10 @@ def run_checks(root, only=None, skip=None):
         if not re.search(r"@(Service|Component|RestController|Controller)\b", s.text):
             continue
         for m in re.finditer(r"\.orElseThrow\(\s*\)|findById\([^()]*\)\s*\.get\(\)|OrNull\([^()]*\)\s*!!", s.text):
+            var = re.search(r"(\w+)\s*$", s.text[max(0, m.start() - 80):m.start()])
+            if var and m.group(0).startswith(".orElseThrow") and re.search(
+                    r"\b" + re.escape(var.group(1)) + r"\s*\.\s*isPresent\s*\(", s.text[max(0, m.start() - 400):m.start()]):
+                continue  # guarded: the Optional was checked first
             exc = "NullPointerException" if m.group(0).endswith("!!") else "NoSuchElementException"
             rep.add("QC16", "warning", s.rel, s.line(m.start()),
                     f"A missing value throws {exc}, which no handler maps, so the client gets a "

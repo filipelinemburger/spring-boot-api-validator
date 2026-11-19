@@ -130,6 +130,7 @@ The skill itself is a standard Agent Skill folder — [`plugins/spring-api-valid
   They live outside the plugin folder, so they aren't shipped to users. Run them with `claude plugin eval plugins/spring-api-validator --eval-dir evals --scaffold --allow-tools Write,Edit,Bash` (real, billed model runs).
 - Validate before publishing: `claude plugin validate . --strict`.
 - `checker/list_endpoints.py` (standard-library Python 3) prints an endpoint inventory: `python3 checker/list_endpoints.py <project-root>`; `checker/openapi_spec.py <project-root>` lists the operations it reads from OpenAPI/Swagger specs.
+- Checker precision is measured on public projects: the last sweep ran all rules over 13 open-source Spring Boot apps and fixed every false alarm found, each with a regression test.
 - `.github/workflows/ci.yml` runs the unit tests, validates the plugin and marketplace, and runs this repository's own action on an eval app to check its outputs and failure behaviour.
 - `tests/test_quick_check.py` (repository root) runs the quick checker against the eval apps and asserts every planted mechanical defect is found and the clean app stays quiet; `tests/test_plugin_folder.py` keeps the plugin folder within the Claude plugin directory's rules (Markdown, JSON, YAML and images only, no `#!` files). Run both with `python3 -m unittest discover tests`.
 

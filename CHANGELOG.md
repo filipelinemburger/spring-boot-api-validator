@@ -2,6 +2,17 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
+## 0.11.1 — 2026-11-19
+### Fixed
+Precision sweep of the checker over 13 public Spring Boot projects (about 1,370 Java/Kotlin files, Boot 2.0–4.1, Java and Kotlin, MVC and WebFlux, single- and multi-module; no crashes, 2.6 s on the largest). Before: 95 findings, 11 false. After: 91, none known false.
+- A class annotation with braces (`@JsonIgnoreProperties({...})`, `@Table(uniqueConstraints = {...})`) hid the annotations above it, so some `@Entity` classes went unrecognised. Fixing it surfaced 7 real findings that had been missed.
+- An entity bound as a request body is QC15's finding; its own associations are no longer treated as request DTOs (false QC04/QC06/QC07).
+- QC06 skips entities; QC07 rates a missing `boolean` as a Suggestion (false is usually the intended default) and numbers as Warnings.
+- QC14 no longer flags `Instant` parameters: Spring parses ISO-8601 instants on every version.
+- QC16 skips `orElseThrow()` on an `Optional` that was checked with `isPresent()` first.
+- QC17 skips login-style bodies (nothing is encoded); QC20 skips password fields (stored as a hash).
+- QC03 on a partial update (PATCH) explains how to validate without requiring every `@NotNull` field.
+
 ## 0.11.0 — 2026-11-19
 ### Added
 - Quick-check rules from defects confirmed in real open-source projects, each checked to fire there and stay quiet on the other projects and all test apps:
