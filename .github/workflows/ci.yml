@@ -35,9 +35,28 @@ jobs:
       - name: Check the action's outputs
         env:
           ERRORS: ${{ steps.action.outputs.errors }}
+          SARIF: ${{ steps.action.outputs.sarif-file }}
         run: |
           echo "errors=$ERRORS"
           test "$ERRORS" = "7"
+          python3 - "$SARIF" <<'EOF'
+          import json, sys
+          run = json.load(open(sys.argv[1]))["runs"][0]
+          results = run["results"]
+          assert sum(r["level"] == "error" for r in results) == 7, results
+          uris = {r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for r in results}
+          assert all(u.startswith("evals/full-audit-order-service/files/src/") for u in uris), uris
+          print(f"SARIF: {len(results)} results, {len(run['tool']['driver']['rules'])} rules")
+          EOF
+
+      - name: The SARIF file passes the SARIF 2.1.0 schema
+        env:
+          SARIF: ${{ steps.action.outputs.sarif-file }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" install --quiet jsonschema
+          curl -sSfL -o "$RUNNER_TEMP/sarif-schema.json" \
+            https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json
+          "$RUNNER_TEMP/venv/bin/python" -c "import json, sys, jsonschema; jsonschema.Draft4Validator(json.load(open(sys.argv[1]))).validate(json.load(open(sys.argv[2]))); print('valid')" "$RUNNER_TEMP/sarif-schema.json" "$SARIF"
 
       - name: The action fails the job on errors when asked to
         id: failing

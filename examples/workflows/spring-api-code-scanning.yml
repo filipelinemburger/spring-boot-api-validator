@@ -1,0 +1,43 @@
+# Spring API quick check in GitHub code scanning — free, deterministic, no API key.
+# Copy to .github/workflows/ in your Spring Boot repository.
+#
+# Runs this repository's checker/quick_check.py on the whole project and uploads the findings as SARIF.
+# They appear in the repository's Security tab and as code scanning alerts on pull requests, stay there
+# across runs, close by themselves when the code is fixed, and can be dismissed (e.g. as false positives)
+# so they don't come back.
+#
+# Code scanning is free on public repositories; private ones need GitHub Advanced Security / Code Security.
+# The push to the default branch gives code scanning its baseline; pull requests are compared with it.
+# To block merges on new alerts, use a code scanning rule in a branch ruleset rather than fail-on.
+
+name: Spring API code scanning
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write # upload SARIF
+
+jobs:
+  quick-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: check
+        uses: filipelinemburger/spring-boot-api-validator@v0
+        with:
+          path: .              # folder with pom.xml / build.gradle (e.g. backend)
+          fail-on: never       # code scanning reports the findings; the job itself doesn't fail
+          changed-only: "false"
+          # skip: QC16         # optional: rules to leave out
+
+      - uses: github/codeql-action/upload-sarif@v4
+        # fork pull requests get a read-only token and can't upload
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          sarif_file: ${{ steps.check.outputs.sarif-file }}
+          category: spring-api-quick-check

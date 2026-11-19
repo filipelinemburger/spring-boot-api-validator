@@ -2,8 +2,11 @@
 
 All notable changes to the spring-api-validator plugin. Versions follow `plugin.json`; the GitHub Action is published under matching `v0.x.y` tags, and `v0` always points to the latest 0.x release.
 
-## Unreleased
+## 0.12.0 — 2026-11-19
 ### Added
+- **SARIF output for GitHub code scanning.** `quick_check.py --format sarif` writes SARIF 2.1.0: every rule with its description, each finding with its severity (Error → error, Warning → warning, Suggestion → note), repository-relative path, line, message and fix, and a fingerprint that ignores line numbers, so an alert follows its code as lines move.
+- The GitHub Action writes that file for the whole project on every run and exposes it as the `sarif-file` output; `examples/workflows/spring-api-code-scanning.yml` uploads it with `github/codeql-action/upload-sarif`. The file covers every file even when annotations are limited to the changed ones, because code scanning does its own comparison with the base branch.
+- CI checks the action's SARIF against the official SARIF 2.1.0 schema; unit tests cover the structure, fingerprints and the checker's version.
 - Trigger test prompts (`tests/trigger_prompts.json`): 23 that should load the skill and 22 close calls that shouldn't. The current description loads it on all 23 and on none of the 22, so it is unchanged.
 
 ## 0.11.1 — 2026-11-19

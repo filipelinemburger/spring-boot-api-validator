@@ -12,7 +12,7 @@ It is a first pass, not a verdict: the patterns are exact for what they match, b
 calls into services or know the team's intent. The skill (or a reviewer) confirms each finding in the
 code. Rules marked "verify" are heuristics that point at something worth a look.
 
-Options: --format text|json|github|markdown, --diff-base REF (only files changed since the branch left
+Options: --format text|json|github|markdown|sarif, --diff-base REF (only files changed since the branch left
 REF), --fail-on SEVERITY, --rules/--skip IDS, --list-rules.
 
 Exit status: 0; 1 when --fail-on is set and a reported finding is at or above that severity; 2 when the
@@ -31,6 +31,7 @@ from list_endpoints import (  # noqa: E402  (shared parsing helpers)
 )
 import openapi_spec  # noqa: E402
 
+VERSION = "0.12.0"  # kept equal to the plugin version (tests/test_quick_check.py)
 SEVERITIES = ("error", "warning", "suggestion")
 
 CONSTRAINTS = {
@@ -1749,11 +1750,83 @@ def print_markdown(root, stack, findings, scope):
     print("\nPattern matches from `quick_check.py`: confirm each in the code. `(verify)` marks heuristics.")
 
 
+SARIF_LEVEL = {"error": "error", "warning": "warning", "suggestion": "note"}
+HELP_URI = "https://github.com/filipelinemburger/spring-boot-api-validator#quick-check-no-ai-ci-friendly"
+
+
+def sarif_report(root, findings):
+    """SARIF 2.1.0 for GitHub code scanning (upload with github/codeql-action/upload-sarif).
+
+    Paths are relative to the repository root. Each result carries a fingerprint built from the rule,
+    file, endpoint and message — not the line — so an alert survives code moving around it; identical
+    findings in one file are told apart by their order.
+    """
+    import hashlib
+    try:
+        top = os.path.realpath(git(root, "rev-parse", "--show-toplevel").strip())
+    except (RuntimeError, OSError):
+        top = os.path.realpath(root)
+    ids = sorted(RULES)
+    rules = [{
+        "id": rid,
+        "name": RULES[rid][0],
+        "shortDescription": {"text": RULES[rid][1]},
+        "fullDescription": {"text": RULES[rid][1]},
+        "helpUri": HELP_URI,
+        "help": {"text": f"{RULES[rid][1]}. Each finding's message says what goes wrong at runtime and how to fix "
+                         f"it. Pattern matches: confirm each in the code.",
+                 "markdown": f"**{rid} {RULES[rid][0]}**: {RULES[rid][1]}.\n\nEach finding's message says what goes "
+                             f"wrong at runtime and how to fix it. Pattern matches: confirm each in the code. "
+                             f"[All rules]({HELP_URI})"},
+        "properties": {"tags": ["spring", "rest-api", "maintainability"], "precision": "high"},
+    } for rid in ids]
+    index = {rid: i for i, rid in enumerate(ids)}
+    seen = {}
+    results = []
+    for f in sorted(findings, key=lambda f: (f["file"], f["line"] or 0, f["rule"])):
+        path = os.path.relpath(os.path.join(os.path.realpath(root), f["file"]), top).replace(os.sep, "/")
+        key = "\x1f".join((f["rule"], path, f["endpoint"] or "", f["message"]))
+        seen[key] = seen.get(key, 0) + 1
+        digest = hashlib.sha256(f"{key}\x1f{seen[key]}".encode("utf-8")).hexdigest()
+        text = f"{f['message']}\nFix: {f['fix']}"
+        if f["endpoint"]:
+            text = f"{f['endpoint']}: {text}"
+        if f["confidence"] == "verify":
+            text += "\n(Heuristic: verify in the code.)"
+        results.append({
+            "ruleId": f["rule"],
+            "ruleIndex": index[f["rule"]],
+            "level": SARIF_LEVEL[f["severity"]],
+            "message": {"text": text},
+            "locations": [{"physicalLocation": {
+                "artifactLocation": {"uri": path, "uriBaseId": "%SRCROOT%"},
+                "region": {"startLine": max(1, int(f["line"] or 1))},
+            }}],
+            "partialFingerprints": {"springApiQuickCheck/v1": digest},
+            "properties": {"severity": f["severity"], "confidence": f["confidence"]},
+        })
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {
+                "name": "Spring API quick check",
+                "semanticVersion": VERSION,
+                "informationUri": "https://github.com/filipelinemburger/spring-boot-api-validator",
+                "rules": rules,
+            }},
+            "results": results,
+            "columnKind": "unicodeCodePoints",
+        }],
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("root", nargs="?", default=".")
-    ap.add_argument("--format", choices=["text", "json", "github", "markdown"], default="text",
-                    help="text (default), json, github (Actions annotations) or markdown (job summary)")
+    ap.add_argument("--format", choices=["text", "json", "github", "markdown", "sarif"], default="text",
+                    help="text (default), json, github (Actions annotations), markdown (job summary) "
+                         "or sarif (GitHub code scanning)")
     ap.add_argument("--json", action="store_true", help="same as --format json")
     ap.add_argument("--diff-base", metavar="REF",
                     help="only report findings in files changed since the branch diverged from REF (e.g. origin/main)")
@@ -1789,6 +1862,8 @@ def main():
         print_github(root, findings)
     elif fmt == "markdown":
         print_markdown(root, stack, findings, scope)
+    elif fmt == "sarif":
+        print(json.dumps(sarif_report(root, findings), indent=2))
     else:
         print_text(root, stack, findings, scope)
 

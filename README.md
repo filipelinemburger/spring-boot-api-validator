@@ -91,11 +91,11 @@ python3 …/quick_check.py <project-root> --fail-on error --skip QC16  # exit 1 
 python3 …/quick_check.py --list-rules
 ```
 
-Findings marked `[verify]` are heuristics worth a look rather than certain defects. A clean run says nothing about HTTP semantics, ownership or business rules — that's what the skill's full review is for. Other options: `--diff-base origin/main` (only files changed since the branch left `main`), `--format github` (Actions annotations) and `--format markdown` (a summary table).
+Findings marked `[verify]` are heuristics worth a look rather than certain defects. A clean run says nothing about HTTP semantics, ownership or business rules — that's what the skill's full review is for. Other options: `--diff-base origin/main` (only files changed since the branch left `main`), `--format github` (Actions annotations), `--format markdown` (a summary table) and `--format sarif` (SARIF 2.1.0 for GitHub code scanning and other SARIF viewers).
 
 ## GitHub Actions
 
-Two ready-made workflows in [`examples/workflows/`](examples/workflows) — copy either or both into `.github/workflows/` of your Spring Boot repository.
+Three ready-made workflows in [`examples/workflows/`](examples/workflows) — copy any of them into `.github/workflows/` of your Spring Boot repository.
 
 **Quick check on every PR** — free, no API key, about a second ([`spring-api-quick-check.yml`](examples/workflows/spring-api-quick-check.yml)). This repository is itself a GitHub Action:
 
@@ -110,6 +110,25 @@ Two ready-made workflows in [`examples/workflows/`](examples/workflows) — copy
 ```
 
 It checks only the files the PR changes, shows each finding as an annotation on the changed line, writes a table to the job summary, exposes `errors` / `warnings` outputs, and fails the job at the severity you choose.
+
+**Findings in code scanning** ([`spring-api-code-scanning.yml`](examples/workflows/spring-api-code-scanning.yml)). The action also writes a SARIF file for the whole project and exposes its path as the `sarif-file` output. Upload it and the findings become code scanning alerts: listed in the repository's Security tab and on pull requests, kept across runs, closed when the code is fixed, and dismissable as false positives so they don't return. Code scanning is free on public repositories; private ones need GitHub Code Security.
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+steps:
+  - uses: actions/checkout@v5
+  - id: check
+    uses: filipelinemburger/spring-boot-api-validator@v0
+    with: { fail-on: never, changed-only: "false" }
+  - uses: github/codeql-action/upload-sarif@v4
+    with:
+      sarif_file: ${{ steps.check.outputs.sarif-file }}
+      category: spring-api-quick-check
+```
+
+Run it on pushes to the default branch as well as on pull requests: code scanning compares each pull request with the default branch's last upload.
 
 **Full review by Claude on every PR** ([`spring-api-claude-review.yml`](examples/workflows/spring-api-claude-review.yml)). Uses the official [Claude Code GitHub Action](https://github.com/anthropics/claude-code-action) to install this plugin and run `/spring-api-validator:validate-api --diff … --comment …`: Errors and Warnings become inline review comments on the changed lines, plus one summary comment. It only reports — never approves, pushes or edits. Needs the Claude GitHub App and an `ANTHROPIC_API_KEY` secret, costs one model review per run, and is skipped for drafts and fork PRs (which don't get secrets).
 

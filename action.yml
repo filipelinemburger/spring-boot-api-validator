@@ -1,5 +1,5 @@
 name: Spring API quick check
-description: Fast, deterministic checks for common Spring Boot REST API defects, shown as annotations on the pull request.
+description: Fast, deterministic checks for common Spring Boot REST API defects, shown as annotations on the pull request and as SARIF for code scanning.
 author: filipelinemburger
 branding:
   icon: check-circle
@@ -29,6 +29,9 @@ outputs:
   warnings:
     description: Number of warning findings reported.
     value: ${{ steps.check.outputs.warnings }}
+  sarif-file:
+    description: Path to a SARIF file with the findings for the whole project (not only changed files), for github/codeql-action/upload-sarif.
+    value: ${{ steps.check.outputs.sarif-file }}
 
 runs:
   using: composite
@@ -57,6 +60,15 @@ runs:
             echo "::warning title=Spring API quick check::Can't find where this branch left $BASE_REF (shallow clone?). Checking all files; use actions/checkout with fetch-depth: 0 to check only the changed ones."
           fi
         fi
+
+        # SARIF for code scanning covers the whole project: code scanning compares it with the base branch
+        # itself, and a changed-files-only upload would close every alert in the files the PR didn't touch.
+        full=("$INPUT_PATH")
+        [ -n "$INPUT_SKIP" ] && full+=(--skip "$INPUT_SKIP")
+        [ -n "$INPUT_RULES" ] && full+=(--rules "$INPUT_RULES")
+        sarif="$RUNNER_TEMP/spring-api-quick-check.sarif"
+        python3 "$script" "${full[@]}" --format sarif > "$sarif"
+        echo "sarif-file=$sarif" >> "$GITHUB_OUTPUT"
 
         python3 "$script" "${args[@]}" --format github
         python3 "$script" "${args[@]}" --format markdown >> "$GITHUB_STEP_SUMMARY"

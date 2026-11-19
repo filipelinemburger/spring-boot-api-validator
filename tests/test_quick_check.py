@@ -282,6 +282,46 @@ class DiffScopeTest(unittest.TestCase):
             self.assertEqual(bad.returncode, 2)
 
 
+class SarifTest(unittest.TestCase):
+    """--format sarif: what GitHub code scanning reads."""
+
+    def test_sarif_for_order_service(self):
+        root = os.path.join(EVALS, "full-audit-order-service", "files")
+        _, findings = quick_check.run_checks(root)
+        doc = quick_check.sarif_report(root, findings)
+        self.assertEqual(doc["version"], "2.1.0")
+        run = doc["runs"][0]
+        driver = run["tool"]["driver"]
+        self.assertEqual([r["id"] for r in driver["rules"]], sorted(quick_check.RULES))
+        results = run["results"]
+        self.assertEqual(len(results), len(findings))
+        self.assertEqual(sum(r["level"] == "error" for r in results),
+                         sum(f["severity"] == "error" for f in findings))
+        self.assertEqual({r["level"] for r in results} - {"error", "warning", "note"}, set())
+        for r in results:
+            self.assertEqual(driver["rules"][r["ruleIndex"]]["id"], r["ruleId"])
+            loc = r["locations"][0]["physicalLocation"]
+            # relative to the repository root, forward slashes, never absolute
+            self.assertTrue(loc["artifactLocation"]["uri"].startswith("evals/full-audit-order-service/files/src/"))
+            self.assertGreaterEqual(loc["region"]["startLine"], 1)
+            self.assertIn("Fix: ", r["message"]["text"])
+        fps = [r["partialFingerprints"]["springApiQuickCheck/v1"] for r in results]
+        self.assertEqual(len(set(fps)), len(fps))
+
+    def test_fingerprint_ignores_line_moves(self):
+        f = {"rule": "QC07", "name": "primitive-in-request-body", "severity": "warning", "confidence": "certain",
+             "file": "src/main/java/x/A.java", "line": 10, "endpoint": None, "message": "m", "fix": "f"}
+        fp = lambda line: quick_check.sarif_report(EVALS, [dict(f, line=line)])["runs"][0]["results"][0][
+            "partialFingerprints"]["springApiQuickCheck/v1"]  # noqa: E731
+        self.assertEqual(fp(10), fp(42))
+        two = quick_check.sarif_report(EVALS, [f, dict(f, line=20)])["runs"][0]["results"]
+        self.assertNotEqual(two[0]["partialFingerprints"], two[1]["partialFingerprints"])
+
+    def test_version_matches_plugin(self):
+        import json
+        with open(os.path.join(ROOT, "plugins", "spring-api-validator", ".claude-plugin", "plugin.json")) as fh:
+            self.assertEqual(quick_check.VERSION, json.load(fh)["version"])
+
 
 POM = """<project><parent><groupId>org.springframework.boot</groupId>
 <artifactId>spring-boot-starter-parent</artifactId><version>{boot}</version></parent>
